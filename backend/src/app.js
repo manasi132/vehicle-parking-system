@@ -42,6 +42,9 @@ app.use((_req, res) => {
 });
 
 app.use((error, _req, res, _next) => {
+  if (error && ['SLOT_LOCK_TIMEOUT', 'SLOT_LOCK_LOST'].includes(error.code)) {
+    return res.status(503).json({ message: 'This parking slot is busy. Refresh availability and retry.' });
+  }
   if (error && error.type === 'entity.parse.failed') {
     return res.status(400).json({ message: 'Request body must be valid JSON.' });
   }
