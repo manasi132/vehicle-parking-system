@@ -58,8 +58,8 @@ async function recordEntry(req, res) {
     if (!activeAt(reservation, now)) {
       return { error: 'Reservation is not active for entry.' };
     }
-    if (reservation.vehicleRegistration && reservation.vehicleRegistration !== vehicleRegistration) {
-      return { error: 'Vehicle registration does not match the reservation.' };
+    if (!reservation.vehicleRegistration || reservation.vehicleRegistration !== vehicleRegistration) {
+      return { error: 'Vehicle registration does not match the reservation or was not recorded at booking.' };
     }
 
     const slot = await ParkingSlot.findById(reservation.slot);
@@ -79,7 +79,6 @@ async function recordEntry(req, res) {
       {
         $set: {
           status: 'checked_in',
-          vehicleRegistration: reservation.vehicleRegistration || vehicleRegistration,
           entryAt: now
         }
       },
