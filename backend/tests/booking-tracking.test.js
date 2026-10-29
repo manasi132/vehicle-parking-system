@@ -14,6 +14,7 @@ const ParkingSlot = require('../src/models/ParkingSlot');
 const Reservation = require('../src/models/Reservation');
 const VehicleEntry = require('../src/models/VehicleEntry');
 const TrackingAlert = require('../src/models/TrackingAlert');
+const SlotLock = require('../src/models/SlotLock');
 
 let mongo;
 
@@ -26,7 +27,8 @@ beforeAll(async () => {
     ParkingSlot.init(),
     Reservation.init(),
     VehicleEntry.init(),
-    TrackingAlert.init()
+    TrackingAlert.init(),
+    SlotLock.init()
   ]);
 });
 
@@ -34,6 +36,7 @@ afterEach(async () => {
   await Promise.all([
     VehicleEntry.deleteMany({}),
     TrackingAlert.deleteMany({}),
+    SlotLock.deleteMany({}),
     Reservation.deleteMany({}),
     ParkingSlot.deleteMany({}),
     ParkingLot.deleteMany({}),
@@ -142,7 +145,7 @@ describe('Manavi Sprint 1 — slot search, reservation and vehicle tracking', ()
     const reservation = await request(app)
       .post('/api/slots/reserve')
       .set('Authorization', 'Bearer ' + driverToken)
-      .send({ slotId: slots[0]._id, ...window });
+      .send({ slotId: slots[0]._id, ...window, vehicleRegistration: 'KA01AB1234' });
     expect(reservation.status).toBe(201);
 
     const availability = await request(app)
@@ -196,7 +199,7 @@ describe('Manavi Sprint 1 — slot search, reservation and vehicle tracking', ()
     const lot = await createLot(adminToken, { name: 'Concurrency Lot' });
     const slots = await createSlots(adminToken, lot._id, ['C-001']);
     const firstWindow = windowAroundNow(2 * 60 * 1000, 60 * 60 * 1000);
-    const payload = { slotId: slots[0]._id, ...firstWindow };
+    const payload = { slotId: slots[0]._id, ...firstWindow, vehicleRegistration: 'KA01AB1234' };
 
     const responses = await Promise.all([
       request(app).post('/api/slots/reserve').set('Authorization', 'Bearer ' + driverToken).send(payload),
@@ -212,7 +215,7 @@ describe('Manavi Sprint 1 — slot search, reservation and vehicle tracking', ()
     const adjacent = await request(app)
       .post('/api/slots/reserve')
       .set('Authorization', 'Bearer ' + driverToken)
-      .send({ slotId: slots[0]._id, ...adjacentWindow });
+      .send({ slotId: slots[0]._id, ...adjacentWindow, vehicleRegistration: 'KA01AB1234' });
     expect(adjacent.status).toBe(201);
 
     const overlap = await request(app)
@@ -221,7 +224,8 @@ describe('Manavi Sprint 1 — slot search, reservation and vehicle tracking', ()
       .send({
         slotId: slots[0]._id,
         startTime: new Date(new Date(firstWindow.startTime).getTime() + 5 * 60 * 1000).toISOString(),
-        endTime: new Date(new Date(firstWindow.endTime).getTime() - 5 * 60 * 1000).toISOString()
+        endTime: new Date(new Date(firstWindow.endTime).getTime() - 5 * 60 * 1000).toISOString(),
+        vehicleRegistration: 'KA01AB1234'
       });
     expect(overlap.status).toBe(409);
   });
@@ -259,6 +263,104 @@ describe('Manavi Sprint 1 — slot search, reservation and vehicle tracking', ()
     expect(available.status).toBe('available');
     const completed = await Reservation.findById(reservation.body.reservationId);
     expect(completed.status).toBe('completed');
+  });
+
+
+  test('requires a vehicle registration when creating a reservation', async () => {
+    const adminToken = await createUserToken('admin');
+    const driverToken = await createUserToken('driver');
+    const lot = await createLot(adminToken, { name: 'Vehicle Required Lot' });
+    const slots = await createSlots(adminToken, lot._id, ['VR-001']);
+
+    const response = await request(app)
+      .post('/api/slots/reserve')
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ slotId: slots[0]._id, ...windowAroundNow(2 * 60 * 1000), vehicleRegistration: '' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/vehicleRegistration is required/i);
+    expect(await Reservation.countDocuments({})).toBe(0);
+  });
+
+  test('allows a non-overlapping future reservation after the current reservation window ends', async () => {
+    const adminToken = await createUserToken('admin');
+    const driverToken = await createUserToken('driver');
+    const attendantToken = await createUserToken('attendant');
+    const lot = await createLot(adminToken, { name: 'Future Booking Lot' });
+    const slots = await createSlots(adminToken, lot._id, ['F-001']);
+    const currentWindow = windowAroundNow(-2 * 60 * 1000, 7 * 60 * 1000);
+
+    const currentReservation = await request(app)
+      .post('/api/slots/reserve')
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({
+        slotId: slots[0]._id,
+        ...currentWindow,
+        vehicleRegistration: 'KA01AB1234'
+      });
+    expect(currentReservation.status).toBe(201);
+
+    const entry = await request(app)
+      .post('/api/tracking/entry')
+      .set('Authorization', 'Bearer ' + attendantToken)
+      .send({
+        reservationId: currentReservation.body.reservationId,
+        vehicleNumber: 'KA01AB1234'
+      });
+    expect(entry.status).toBe(201);
+
+    const futureStart = new Date(new Date(currentWindow.endTime).getTime() + 60 * 1000);
+    const futureEnd = new Date(futureStart.getTime() + 60 * 60 * 1000);
+    const futureWindow = {
+      startTime: futureStart.toISOString(),
+      endTime: futureEnd.toISOString(),
+      vehicleRegistration: 'KA02CD5678'
+    };
+
+    const futureReservation = await request(app)
+      .post('/api/slots/reserve')
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ slotId: slots[0]._id, ...futureWindow });
+    expect(futureReservation.status).toBe(201);
+
+    const availability = await request(app)
+      .get('/api/lots/' + lot._id + '/availability')
+      .query({ startTime: futureWindow.startTime, endTime: futureWindow.endTime });
+    expect(availability.status).toBe(200);
+    expect(availability.body.availableSlots).toBe(0);
+    expect(availability.body.slots[0].status).toBe('reserved');
+  });
+
+  test('rejects a gate-entry vehicle registration that differs from the reservation', async () => {
+    const adminToken = await createUserToken('admin');
+    const driverToken = await createUserToken('driver');
+    const attendantToken = await createUserToken('attendant');
+    const lot = await createLot(adminToken, { name: 'Vehicle Match Lot' });
+    const slots = await createSlots(adminToken, lot._id, ['M-001']);
+    const window = windowAroundNow(-2 * 60 * 1000, 2 * 60 * 60 * 1000);
+
+    const reservation = await request(app)
+      .post('/api/slots/reserve')
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({
+        slotId: slots[0]._id,
+        ...window,
+        vehicleRegistration: 'KA01AB1234'
+      });
+    expect(reservation.status).toBe(201);
+
+    const mismatchedEntry = await request(app)
+      .post('/api/tracking/entry')
+      .set('Authorization', 'Bearer ' + attendantToken)
+      .send({
+        reservationId: reservation.body.reservationId,
+        vehicleNumber: 'KA09XY9999'
+      });
+
+    expect(mismatchedEntry.status).toBe(409);
+    expect(mismatchedEntry.body.alertId).toBeTruthy();
+    expect(await TrackingAlert.countDocuments({ reservationId: reservation.body.reservationId })).toBe(1);
+    expect((await ParkingSlot.findById(slots[0]._id)).status).toBe('available');
   });
 
   test('rejects an unknown reservation at the gate and persists an alert', async () => {
