@@ -26,7 +26,7 @@ The frontend calls:
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/lots`
-- `GET /api/lots/:lotId/slots`
+- `GET /api/lots/:lotId/slots` (when start and end times are selected, the client adds `startTime` and `endTime` query parameters so the availability API can return window-aware slot status)
 - `POST /api/slots/reserve`
 - `POST /api/tracking/entry`
 - `POST /api/tracking/exit`
