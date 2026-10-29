@@ -44,7 +44,7 @@ function AuthScreen({ onAuthenticated, setNotice }) {
         });
         setNotice({ type: 'success', text: 'Account created. Sign in with your credentials.' });
         setMode('login');
-        setForm((old) => ({ ...old, password: '' }));
+        setForm((old) => ({ ...old, email: old.email.trim() || old.phone.trim(), phone: '', password: '' }));
       } else {
         const session = await api.login({
           identifier: form.email.trim() || form.phone.trim(),
@@ -93,7 +93,7 @@ function AuthScreen({ onAuthenticated, setNotice }) {
             </label>}
             <label>{isRegister ? 'Email address' : 'Email or phone number'}
               <input
-                type={isRegister && form.phone && !form.email ? 'text' : 'text'}
+                type={isRegister ? 'email' : 'text'}
                 autoComplete={isRegister ? 'email' : 'username'}
                 value={form.email}
                 onChange={change('email')}
@@ -106,7 +106,7 @@ function AuthScreen({ onAuthenticated, setNotice }) {
             </label>}
             {isRegister && <p className="field-hint">Use a valid email or phone number. Passwords must be 8–72 characters and include uppercase, lowercase, a number, and a symbol.</p>}
             <label>Password
-              <input type="password" autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={isRegister ? 8 : undefined} maxLength={72} required value={form.password} onChange={change('password')} placeholder={isRegister ? 'Create a strong password' : 'Enter your password'} />
+              <input type="password" autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={isRegister ? 8 : undefined} maxLength={72} pattern={isRegister ? '(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,72}' : undefined} title={isRegister ? 'Use 8–72 characters with uppercase, lowercase, a number, and a symbol.' : undefined} required value={form.password} onChange={change('password')} placeholder={isRegister ? 'Create a strong password' : 'Enter your password'} />
             </label>
             <button className="primary full" type="submit" disabled={busy}>
               {busy ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'} <ArrowRight size={17} />
@@ -122,7 +122,7 @@ function AuthScreen({ onAuthenticated, setNotice }) {
 
 function Workspace({ session, onLogout, setNotice }) {
   const role = session.user.role || 'driver';
-  const [page, setPage] = useState(role === 'attendant' ? 'gate' : 'book');
+  const [page, setPage] = useState(role === 'attendant' ? 'gate' : role === 'admin' ? 'admin' : 'book');
   const [lots, setLots] = useState([]);
   const [slots, setSlots] = useState([]);
   const [selectedLot, setSelectedLot] = useState('');
