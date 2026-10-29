@@ -51,7 +51,7 @@ describe('Vehicle Parking System frontend', () => {
     window.localStorage.setItem('vps.token', 'test-token');
     window.localStorage.setItem('vps.user', JSON.stringify({ name: 'Meghana', role: 'driver' }));
     vi.stubGlobal('fetch', vi.fn(async (url) => {
-      if (url.endsWith('/api/lots')) {
+      if (String(url).includes('/api/lots?') || String(url).endsWith('/api/lots')) {
         return jsonResponse(200, { lots: [{ _id: 'lot-1', name: 'Central Parking', address: '1 Main Road', city: 'Bengaluru' }] });
       }
       if (url.includes('/api/lots/lot-1/slots')) {
@@ -72,8 +72,77 @@ describe('Vehicle Parking System frontend', () => {
     fireEvent.click(screen.getByRole('button', { name: /a-001/i }));
     fireEvent.change(screen.getByLabelText(/reservation start time/i), { target: { value: '2026-11-01T10:00' } });
     fireEvent.change(screen.getByLabelText(/reservation end time/i), { target: { value: '2026-11-01T11:00' } });
+    fireEvent.change(screen.getByLabelText(/booking vehicle registration/i), { target: { value: 'KA01AB1234' } });
     fireEvent.click(screen.getByRole('button', { name: /reserve selected slot/i }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/slot was just booked/i));
+  });
+
+
+  it('polls lot and selected-slot availability every four seconds', async () => {
+    window.localStorage.setItem('vps.token', 'test-token');
+    window.localStorage.setItem('vps.user', JSON.stringify({ name: 'Manavi', role: 'driver' }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { lots: [] })));
+    const intervalSpy = vi.spyOn(window, 'setInterval');
+
+    render(<App />);
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), 4000);
+  });
+
+  it('sends location coordinates and a maximum rate to the search API', async () => {
+    window.localStorage.setItem('vps.token', 'test-token');
+    window.localStorage.setItem('vps.user', JSON.stringify({ name: 'Manavi', role: 'driver' }));
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { lots: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/maximum hourly rate/i), { target: { value: '75' } });
+    fireEvent.change(screen.getByLabelText(/search latitude/i), { target: { value: '12.9716' } });
+    fireEvent.change(screen.getByLabelText(/search longitude/i), { target: { value: '77.5946' } });
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) =>
+        String(url).includes('maxRate=75') &&
+        String(url).includes('lat=12.9716') &&
+        String(url).includes('lng=77.5946')
+      )).toBe(true);
+    });
+  });
+
+  it('submits hourly rate and coordinates when an admin creates a lot', async () => {
+    window.localStorage.setItem('vps.token', 'admin-token');
+    window.localStorage.setItem('vps.user', JSON.stringify({ name: 'Admin', role: 'admin' }));
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      const path = String(url);
+      if (path.includes('/api/lots') && options.method === 'POST') {
+        return jsonResponse(201, { lot: { _id: 'lot-new' } });
+      }
+      if (path.includes('/api/lots')) return jsonResponse(200, { lots: [] });
+      return jsonResponse(404, { message: 'Not found.' });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: /manage lots/i }));
+    fireEvent.change(screen.getByLabelText(/lot name/i), { target: { value: 'Central Parking' } });
+    fireEvent.change(screen.getByLabelText(/^city$/i), { target: { value: 'Bengaluru' } });
+    fireEvent.change(screen.getByLabelText(/^address$/i), { target: { value: '1 Main Road' } });
+    fireEvent.change(screen.getByLabelText(/lot hourly rate/i), { target: { value: '60' } });
+    fireEvent.change(screen.getByLabelText(/lot latitude/i), { target: { value: '12.9716' } });
+    fireEvent.change(screen.getByLabelText(/lot longitude/i), { target: { value: '77.5946' } });
+    fireEvent.click(screen.getByRole('button', { name: /create lot/i }));
+
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(([url, options]) =>
+        String(url).startsWith('/api/lots') && options?.method === 'POST'
+      );
+      expect(createCall).toBeTruthy();
+      const payload = JSON.parse(createCall[1].body);
+      expect(payload.hourlyRate).toBe(60);
+      expect(payload.latitude).toBe(12.9716);
+      expect(payload.longitude).toBe(77.5946);
+    });
   });
 
   it('opens the gate kiosk for a signed-in attendant', async () => {
