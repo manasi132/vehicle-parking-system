@@ -1,0 +1,42 @@
+name: VPS backend CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feat/manasi-sprint1-auth-lot-management
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  push:
+    branches:
+      - feat/manavi-sprint1-booking-tracking
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Backend tests and syntax checks
+    # Pin the runner image so the ubuntu-latest migration cannot change the
+    # environment unexpectedly. Upgrade deliberately after testing Ubuntu 26.04.
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm install --no-audit --no-fund
+      - name: Check JavaScript syntax
+        run: find backend/src backend/tests -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Run backend test suite
+        working-directory: backend
+        run: npm test
