@@ -1,77 +1,82 @@
 # Vehicle Parking System — Backend
 
-This Express/MongoDB API implements Manasi's Sprint 1 user stories from the VPS Jira backlog:
+This Express/MongoDB API supports the Vehicle Parking System Sprint 1 workstreams. The backend is organized into authentication, lot/slot management, booking, and tracking routes.
 
-- **VPS-F-001:** Register with email and/or phone; hash passwords using bcrypt; reject duplicate contacts.
-- **VPS-F-002:** Log in and receive a signed JWT that expires after two hours.
-- **VPS-F-005 / VPS-SR-003:** Authenticate JWTs and enforce driver, attendant, and admin roles server-side.
-- **VPS-F-040:** Admin-only parking-lot creation, update, deactivation, and bulk slot creation.
-
-## Requirements
+## Requirements and local setup
 
 - Node.js 20 or newer
 - MongoDB 6 or newer (local instance or MongoDB Atlas)
 
-## Run locally
+From this directory:
 
-From this `backend` directory:
+1. Install dependencies with npm install.
+2. Copy .env.example to .env.
+3. Set MONGODB_URI to your local or Atlas connection string.
+4. Replace JWT_SECRET with a random secret of at least 32 characters.
+5. Start the API with npm run dev.
+6. Check http://localhost:4000/api/health; it should return {"status":"ok"}.
 
-1. Install packages: `npm install`
-2. Copy `.env.example` to `.env`
-3. Set `MONGODB_URI` to your local or Atlas connection string
-4. Replace `JWT_SECRET` with a random secret of at least 32 characters
-5. Start the API: `npm run dev`
-6. Visit `http://localhost:4000/api/health`; the response should be `{"status":"ok"}`
+Never commit .env. Do not store raw payment card data in this service.
 
-Never commit `.env`. The root `.gitignore` already ignores environment files.
+## Manavi — Sprint 1 booking and tracking
 
-## Endpoints
+- VPS-F-010: GET /api/lots/:lotId/availability and GET /api/lots/:lotId/slots return slot status and availability counts calculated from current slot status plus overlapping confirmed reservations. Availability is computed on each request; no cached counts are used.
+- VPS-F-011: GET /api/lots supports q or location text search, city filtering, maxRate (or maxPrice), availableOnly, and lat/lng (or latitude/longitude) for distance sorting. Lots can store an optional hourlyRate and coordinates.
+- VPS-F-012: POST /api/slots/reserve accepts slotId, startTime, endTime, and an optional vehicleRegistration. A valid request returns HTTP 201, reservationId, expiresAt, and the created reservation. Authentication is required.
+- VPS-F-014: reservation creation serializes operations for each slot in the running API process and checks for overlapping confirmed/checked-in reservations. Conflicting requests return HTTP 409. Adjacent windows are allowed.
+- VPS-F-020: POST /api/tracking/entry validates the active reservation, optional registered vehicle number, and attendant/admin role; it creates an entry log and marks the slot occupied. Unknown, mismatched, expired, or already-used reservations are rejected with HTTP 409 and a persisted tracking alert.
+- Tracking support also includes POST /api/tracking/exit to close an active entry, mark the reservation completed, and release the slot.
 
-### Health
-- `GET /api/health`
+### Search examples
 
-### Authentication
-- `POST /api/auth/register`
-  - Body example: `{"name":"Manasi","email":"manasi@example.com","phone":"+919876543210","password":"Vps!Pass123"}`
-  - Supply at least one contact: email or phone.
-  - Public registration always makes a `driver`; the request cannot assign itself an `admin` or `attendant` role.
-  - Success: HTTP 201. Only public user fields are returned; password hashes are never returned.
-  - Invalid/missing fields: HTTP 400. Duplicate email or phone: HTTP 409.
+- GET /api/lots?location=Mysuru&maxRate=80&availableOnly=true
+- GET /api/lots?lat=12.9716&lng=77.5946
+- GET /api/lots/LOT_ID/availability?startTime=2026-10-29T10:00:00.000Z&endTime=2026-10-29T11:00:00.000Z
 
-- `POST /api/auth/login`
-  - Body: `{"identifier":"manasi@example.com","password":"Vps!Pass123"}` (email or phone is supported)
-  - Success: HTTP 200 with JWT, `expiresInSeconds: 7200`, role, and public user fields.
-  - Invalid credentials: HTTP 401 with a generic message.
+### Reservation example
 
-Authentication requests are rate-limited. The API also uses Helmet security headers and a configurable CORS allowlist.
+POST /api/slots/reserve with JSON body:
 
-### Parking lots and slots
-- `GET /api/lots`: list active lots.
-- `GET /api/lots/:lotId`: read one active lot.
-- `GET /api/lots/:lotId/slots`: list slots for an active lot.
-- `POST /api/lots`: admin only. Body: `{"name":"Central Parking","address":"10 Main Road","city":"Mysuru"}`.
-- `PATCH /api/lots/:lotId`: admin only; update one or more of name, address, and city.
-- `PATCH /api/lots/:lotId/deactivate`: admin only; deactivate without deleting historical data.
-- `POST /api/lots/:lotId/slots/bulk`: admin only. Body may be `{"count":10,"prefix":"A"}` (creates A-001 ... A-010) or `{"slots":["A-001","A-002"]}`.
-  - New slots start with `available` status.
-  - Duplicate slot labels within a lot are rejected.
+    {
+      "slotId": "VALID_MONGODB_SLOT_ID",
+      "startTime": "2026-10-29T10:00:00.000Z",
+      "endTime": "2026-10-29T11:00:00.000Z",
+      "vehicleRegistration": "KA01AB1234"
+    }
 
-Missing/invalid authentication returns HTTP 401. A valid non-admin attempting an admin-only operation receives HTTP 403.
+Include a valid JWT in the Authorization header as Bearer token. The start time must precede the end time, and endTime must be in the future.
 
-## Provision the first administrator
+### Vehicle entry example
 
-There is deliberately no public endpoint for promoting a user. First register the account, then run from this folder as a trusted maintainer:
+POST /api/tracking/entry with JSON body containing reservationId and vehicleNumber. Use an attendant/admin JWT. Entry is accepted only while a reservation is confirmed and its start/end window includes the current time. On success, an entry record is created, the reservation transitions to checked_in, and the slot becomes occupied.
 
-```sh
-npm run set-role -- --email admin@example.com --role admin
-```
+POST /api/tracking/exit accepts the same fields for an active entry. On success the entry is closed, reservation becomes completed, and an occupied slot is released.
 
-Use `--role attendant` to provision an attendant account. The target user must already exist. The user should log in again after a role change.
+## Authentication and lot administration
 
-## Automated tests
+- POST /api/auth/register — public registration; always creates a driver.
+- POST /api/auth/login — returns a signed JWT that expires after two hours.
+- GET /api/lots — list/search active lots.
+- GET /api/lots/:lotId — read one active lot.
+- GET /api/lots/:lotId/slots — list slots with reservation-aware availability.
+- POST /api/lots — admin-only lot creation. Requires name, address, and city; hourlyRate (non-negative) and latitude/longitude (provided together) are optional.
+- PATCH /api/lots/:lotId — admin-only updates to lot details, rate, or coordinates.
+- PATCH /api/lots/:lotId/deactivate — admin-only soft deactivation.
+- POST /api/lots/:lotId/slots/bulk — admin-only bulk slot creation.
+- Missing/invalid authentication returns HTTP 401; an authenticated user without the required role receives HTTP 403.
 
-Run `npm test`. Jest/Supertest tests use `mongodb-memory-server`; the first run may download a MongoDB test binary. The API test suite covers validation, password hashing, duplicate contacts, JWT claims/expiry, generic login failures, role restrictions, and parking-lot/slot administration.
+## Provision the first administrator or attendant
 
-## Scope boundaries
+There is deliberately no public endpoint for promoting an account. First register the account, then run from this folder as a trusted maintainer:
 
-OTP reset and account lockout are Sprint 2. HTTPS is enforced by the deployment platform/reverse proxy; production deployment must use HTTPS and a secure JWT secret. Do not claim the production HTTPS story is done solely because the local API runs.
+    npm run set-role -- --email admin@example.com --role admin
+
+Use --role attendant to provision an attendant. The account must already exist, and the user should sign in again after a role change.
+
+## Tests
+
+Run npm test. The Jest/Supertest suite uses mongodb-memory-server and covers authentication, slot search and availability, reservation validation, conflicting concurrent booking requests, vehicle entry/exit, role access, and unauthorized-vehicle alerts. The first test run may download a MongoDB test binary.
+
+## Concurrency note
+
+The per-slot mutex prevents conflicting reservation operations and gate operations inside one running Node.js process. If the application is deployed with multiple Node processes or replicas, add a MongoDB replica-set transaction/write-conflict strategy and retry handling before claiming cross-instance concurrency guarantees.

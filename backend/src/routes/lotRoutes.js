@@ -2,20 +2,23 @@ const express = require('express');
 const asyncHandler = require('../utils/asyncHandler');
 const { authenticate, authorizeRoles } = require('../middleware/auth');
 const {
-  listLots,
   getLot,
-  getLotSlots,
   createLot,
   updateLot,
   deactivateLot,
   bulkCreateSlots
 } = require('../controllers/parkingLotController');
+const {
+  searchLots,
+  getSlotAvailability
+} = require('../controllers/bookingController');
 
 const router = express.Router();
 
-// Public read endpoints are used by driver search and availability screens.
-router.get('/', asyncHandler(listLots));
-router.get('/:lotId/slots', asyncHandler(getLotSlots));
+// Public search/availability reads compute live counts from slots and reservations.
+router.get('/', asyncHandler(searchLots));
+router.get('/:lotId/slots', asyncHandler(getSlotAvailability));
+router.get('/:lotId/availability', asyncHandler(getSlotAvailability));
 router.get('/:lotId', asyncHandler(getLot));
 
 // Writes require a valid server-verified admin role.

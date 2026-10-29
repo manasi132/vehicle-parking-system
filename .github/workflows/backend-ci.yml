@@ -1,0 +1,39 @@
+name: VPS backend CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feat/manasi-sprint1-auth-lot-management
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  push:
+    branches:
+      - feat/manavi-sprint1-booking-tracking
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Backend tests and syntax checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm install --no-audit --no-fund
+      - name: Check JavaScript syntax
+        run: find backend/src backend/tests -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Run backend test suite
+        working-directory: backend
+        run: npm test
