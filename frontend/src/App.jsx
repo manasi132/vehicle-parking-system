@@ -163,10 +163,10 @@ function Workspace({ session, onLogout, setNotice }) {
     }
   }
 
-  async function loadSlots(lotId) {
+  async function loadSlots(lotId, range = {}) {
     if (!lotId) { setSlots([]); return; }
     try {
-      const result = await api.lotSlots(lotId);
+      const result = await api.lotSlots(lotId, range);
       const items = Array.isArray(result) ? result : (result.slots || result.items || []);
       setSlots(items);
     } catch (error) {
@@ -176,7 +176,14 @@ function Workspace({ session, onLogout, setNotice }) {
   }
 
   useEffect(() => { loadLots(); }, []);
-  useEffect(() => { loadSlots(selectedLot); }, [selectedLot]);
+  useEffect(() => {
+    if (!selectedLot) { setSlots([]); return; }
+    const start = windowStart ? new Date(windowStart) : null;
+    const end = windowEnd ? new Date(windowEnd) : null;
+    const validWindow = start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start;
+    const range = validWindow ? { startTime: start.toISOString(), endTime: end.toISOString() } : {};
+    loadSlots(selectedLot, range);
+  }, [selectedLot, windowStart, windowEnd]);
 
   const visibleLots = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -202,7 +209,7 @@ function Workspace({ session, onLogout, setNotice }) {
     try {
       const result = await api.reserve({ slotId: reserveSlot, startTime: new Date(windowStart).toISOString(), endTime: new Date(windowEnd).toISOString() });
       setNotice({ type: 'success', text: 'Reservation confirmed. Reference: ' + (result.reservationId || (result.reservation && result.reservation._id) || 'created') });
-      await loadSlots(selectedLot);
+      await loadSlots(selectedLot, { startTime: new Date(windowStart).toISOString(), endTime: new Date(windowEnd).toISOString() });
       await loadLots();
     } catch (error) {
       setNotice({ type: 'error', text: error.status === 409 ? 'That slot was just booked. Please choose another.' : error.message });
