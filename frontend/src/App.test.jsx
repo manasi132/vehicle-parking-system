@@ -164,7 +164,8 @@ describe('Vehicle Parking System frontend', () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText(/email or phone number/i), { target: { value: 'driver@example.com' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'ValidPass!123' } });
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    const signInButtons = screen.getAllByRole('button', { name: /sign in/i });
+    fireEvent.click(signInButtons[signInButtons.length - 1]);
     await waitFor(() => expect(screen.getByRole('navigation', { name: /main navigation/i })).toBeInTheDocument());
     expect(window.localStorage.getItem('vps.token')).toBe('signed-test-token');
     expect(screen.getByRole('button', { name: /find parking/i })).toBeInTheDocument();
@@ -189,6 +190,7 @@ describe('Vehicle Parking System frontend', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/tracking/entry', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer attendant-token' }),
     })));
+    await waitFor(() => expect(screen.getByRole('button', { name: /record exit/i })).toBeEnabled());
     fireEvent.change(screen.getByLabelText(/reservation id/i), { target: { value: 'reservation-123' } });
     fireEvent.change(screen.getByLabelText(/vehicle registration number/i), { target: { value: 'KA01AB1234' } });
     fireEvent.click(screen.getByRole('button', { name: /record exit/i }));
