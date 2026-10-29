@@ -54,7 +54,7 @@ describe('Vehicle Parking System frontend', () => {
       if (url.endsWith('/api/lots')) {
         return jsonResponse(200, { lots: [{ _id: 'lot-1', name: 'Central Parking', address: '1 Main Road', city: 'Bengaluru' }] });
       }
-      if (url.endsWith('/api/lots/lot-1/slots')) {
+      if (url.includes('/api/lots/lot-1/slots')) {
         return jsonResponse(200, { slots: [
           { _id: 'slot-1', slotNumber: 'A-001', status: 'available' },
           { _id: 'slot-2', slotNumber: 'A-002', status: 'occupied' },
