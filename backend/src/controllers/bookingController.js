@@ -56,8 +56,12 @@ async function summarizeAvailability(lots, window) {
   const slots = await ParkingSlot.find({ lot: { $in: lotIds } })
     .select('lot status slotNumber')
     .lean();
-  const availableCandidates = slots.filter((slot) => slot.status === 'available');
+  const futureWindow = window.start.getTime() > Date.now();
+  const availableCandidates = slots.filter((slot) =>
+    slot.status === 'available' || (futureWindow && slot.status === 'occupied')
+  );
   const candidateIds = availableCandidates.map((slot) => slot._id);
+  const candidateIdSet = new Set(candidateIds.map((id) => String(id)));
 
   const reservations = candidateIds.length
     ? await Reservation.find({
@@ -76,7 +80,7 @@ async function summarizeAvailability(lots, window) {
     const key = String(slot.lot);
     const current = counts.get(key) || { totalSlots: 0, availableSlots: 0 };
     current.totalSlots += 1;
-    if (slot.status === 'available' && !reservedIds.has(String(slot._id))) {
+    if (candidateIdSet.has(String(slot._id)) && !reservedIds.has(String(slot._id))) {
       current.availableSlots += 1;
     }
     counts.set(key, current);
@@ -192,9 +196,17 @@ async function getSlotAvailability(req, res) {
     : [];
   const reservedIds = new Set(reservations.map((reservation) => String(reservation.slot)));
 
+  const futureWindow = window.start.getTime() > Date.now();
   const slots = storedSlots.map((slot) => {
-    const reserved = slot.status === 'available' && reservedIds.has(String(slot._id));
-    const effectiveStatus = reserved ? 'reserved' : slot.status;
+    const reserved = reservedIds.has(String(slot._id));
+    let effectiveStatus = slot.status;
+    if (slot.status !== 'maintenance' && reserved) {
+      effectiveStatus = 'reserved';
+    } else if (slot.status === 'occupied' && futureWindow) {
+      // Slot state is time-window-aware: occupancy now does not by itself
+      // prohibit a later reservation after the current booking window ends.
+      effectiveStatus = 'available';
+    }
     return { ...slot, status: effectiveStatus, isAvailable: effectiveStatus === 'available' };
   });
   const availableSlots = slots.filter((slot) => slot.isAvailable).length;
@@ -220,12 +232,11 @@ async function createReservation(req, res) {
     return res.status(400).json({ message: 'endTime must be in the future.' });
   }
 
-  let vehicleRegistration;
-  if (req.body.vehicleRegistration !== undefined && req.body.vehicleRegistration !== '') {
-    vehicleRegistration = normalizeVehicleRegistration(req.body.vehicleRegistration);
-    if (!vehicleRegistration) {
-      return res.status(400).json({ message: 'vehicleRegistration must contain 4 to 15 letters or digits.' });
-    }
+  const vehicleRegistration = normalizeVehicleRegistration(req.body.vehicleRegistration);
+  if (!vehicleRegistration) {
+    return res.status(400).json({
+      message: 'vehicleRegistration is required and must contain 4 to 15 letters or digits.'
+    });
   }
 
   const result = await withSlotLock(slotId, async () => {
@@ -237,10 +248,6 @@ async function createReservation(req, res) {
     if (slot.status === 'maintenance') {
       return { status: 409, message: 'This parking slot is under maintenance.' };
     }
-    if (slot.status === 'occupied') {
-      return { status: 409, message: 'This parking slot is currently occupied.' };
-    }
-
     const conflict = await Reservation.findOne({
       slot: slot._id,
       status: { $in: ACTIVE_RESERVATION_STATUSES },
@@ -258,7 +265,7 @@ async function createReservation(req, res) {
       startTime: window.start,
       endTime: window.end,
       status: 'confirmed',
-      ...(vehicleRegistration ? { vehicleRegistration } : {})
+      vehicleRegistration
     });
     return { reservation };
   });
