@@ -25,6 +25,34 @@ function cleanLotInput(body, allowPartial) {
   if (result.city && (result.city.length < 2 || result.city.length > 100)) {
     return { error: 'City must contain 2 to 100 characters.' };
   }
+
+  if (body.hourlyRate !== undefined) {
+    if (body.hourlyRate === null || body.hourlyRate === '') {
+      return { error: 'Hourly rate must be a non-negative number.' };
+    }
+    const hourlyRate = Number(body.hourlyRate);
+    if (!Number.isFinite(hourlyRate) || hourlyRate < 0) {
+      return { error: 'Hourly rate must be a non-negative number.' };
+    }
+    result.hourlyRate = hourlyRate;
+  }
+
+  const hasLatitude = body.latitude !== undefined;
+  const hasLongitude = body.longitude !== undefined;
+  if (hasLatitude !== hasLongitude) {
+    return { error: 'Latitude and longitude must be supplied together.' };
+  }
+  if (hasLatitude && hasLongitude) {
+    const latitude = Number(body.latitude);
+    const longitude = Number(body.longitude);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+        !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      return { error: 'Latitude must be -90..90 and longitude must be -180..180.' };
+    }
+    result.latitude = latitude;
+    result.longitude = longitude;
+  }
+
   if (allowPartial && Object.keys(result).length === 0) {
     return { error: 'Provide at least one field to update.' };
   }
@@ -33,7 +61,7 @@ function cleanLotInput(body, allowPartial) {
 
 async function listLots(_req, res) {
   const lots = await ParkingLot.find({ isActive: true })
-    .select('name address city isActive createdAt updatedAt')
+    .select('name address city hourlyRate latitude longitude isActive createdAt updatedAt')
     .sort({ city: 1, name: 1 })
     .lean();
   return res.status(200).json({ lots });
@@ -48,6 +76,8 @@ async function getLot(req, res) {
   return res.status(200).json({ lot });
 }
 
+// Kept for compatibility with the original lot controller. The route now uses
+// the booking controller's reservation-aware slot listing.
 async function getLotSlots(req, res) {
   if (!isValidObjectId(req.params.lotId)) {
     return res.status(400).json({ message: 'Invalid parking lot ID.' });

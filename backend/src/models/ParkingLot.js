@@ -23,6 +23,25 @@ const parkingLotSchema = new mongoose.Schema(
       minlength: 2,
       maxlength: 100
     },
+    // Optional until an administrator configures a tariff.
+    hourlyRate: {
+      type: Number,
+      min: 0,
+      default: null
+    },
+    // Used to sort lots by distance when the client supplies coordinates.
+    latitude: {
+      type: Number,
+      min: -90,
+      max: 90,
+      default: null
+    },
+    longitude: {
+      type: Number,
+      min: -180,
+      max: 180,
+      default: null
+    },
     isActive: {
       type: Boolean,
       default: true
@@ -37,6 +56,7 @@ const parkingLotSchema = new mongoose.Schema(
 );
 
 parkingLotSchema.index({ city: 1, isActive: 1 });
+parkingLotSchema.index({ hourlyRate: 1, isActive: 1 });
 
 module.exports =
   mongoose.models.ParkingLot || mongoose.model('ParkingLot', parkingLotSchema);

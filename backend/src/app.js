@@ -3,6 +3,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const authRoutes = require('./routes/authRoutes');
 const lotRoutes = require('./routes/lotRoutes');
+const slotRoutes = require('./routes/slotRoutes');
+const trackingRoutes = require('./routes/trackingRoutes');
 
 const app = express();
 const configuredOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173,http://localhost:3000')
@@ -14,7 +16,6 @@ app.disable('x-powered-by');
 app.use(helmet());
 app.use(cors({
   origin(origin, callback) {
-    // Requests from tools such as curl have no Origin header.
     if (!origin || configuredOrigins.includes(origin)) return callback(null, true);
     return callback(new Error('Origin is not allowed by CORS.'));
   },
@@ -33,12 +34,17 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/lots', lotRoutes);
+app.use('/api/slots', slotRoutes);
+app.use('/api/tracking', trackingRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ message: 'Endpoint not found.' });
 });
 
 app.use((error, _req, res, _next) => {
+  if (error && ['SLOT_LOCK_TIMEOUT', 'SLOT_LOCK_LOST'].includes(error.code)) {
+    return res.status(503).json({ message: 'This parking slot is busy. Refresh availability and retry.' });
+  }
   if (error && error.type === 'entity.parse.failed') {
     return res.status(400).json({ message: 'Request body must be valid JSON.' });
   }
