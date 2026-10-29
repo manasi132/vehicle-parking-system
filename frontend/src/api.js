@@ -34,7 +34,10 @@ export const api = {
   register: (data) => request('/api/auth/register', json('POST', data)),
   login: (data) => request('/api/auth/login', json('POST', data)),
   lots: () => request('/api/lots'),
-  lotSlots: (lotId) => request('/api/lots/' + encodeURIComponent(lotId) + '/slots'),
+  lotSlots: (lotId, window = {}) => {
+    const query = new URLSearchParams(window).toString();
+    return request('/api/lots/' + encodeURIComponent(lotId) + '/slots' + (query ? '?' + query : ''));
+  },
   reserve: (data) => request('/api/slots/reserve', json('POST', data)),
   gateEntry: (data) => request('/api/tracking/entry', json('POST', data)),
   gateExit: (data) => request('/api/tracking/exit', json('POST', data)),
