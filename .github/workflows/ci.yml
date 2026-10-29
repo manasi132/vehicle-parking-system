@@ -4,14 +4,30 @@ on:
     branches: [main]
   push:
     branches: [main]
+permissions:
+  contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
       - run: npm ci
       - run: npm test
+  tls-config:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install nginx
+        run: sudo apt-get update && sudo apt-get install -y nginx openssl
+      - name: Validate nginx configuration with ephemeral test certificate
+        run: |
+          sudo mkdir -p /etc/letsencrypt/live/parking.example.com
+          sudo openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=parking.example.com' -addext 'subjectAltName=DNS:parking.example.com' -keyout /etc/letsencrypt/live/parking.example.com/privkey.pem -out /etc/letsencrypt/live/parking.example.com/fullchain.pem
+          sudo cp deploy/nginx.conf /etc/nginx/conf.d/parking.conf
+          sudo nginx -t

@@ -8,7 +8,7 @@ export function calculateFee({ startTime, endTime, hourlyRateMinor, peak }) {
   }
   if (peak && (!Number.isInteger(peak.startHour) || !Number.isInteger(peak.endHour) ||
       peak.startHour < 0 || peak.startHour > 23 || peak.endHour < 0 || peak.endHour > 23 ||
-      peak.startHour === peak.endHour || !Number.isInteger(peak.multiplierBps) || peak.multiplierBps < 10000)) {
+      peak.startHour === peak.endHour || !Number.isSafeInteger(peak.multiplierBps) || peak.multiplierBps < 10000)) {
     throw new TypeError('Invalid peak pricing rule');
   }
   // Integrate over hour boundaries so overnight and multi-day stays are handled correctly.
