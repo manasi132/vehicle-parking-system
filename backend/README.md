@@ -79,4 +79,4 @@ Run npm test. The Jest/Supertest suite uses mongodb-memory-server and covers aut
 
 ## Concurrency note
 
-The per-slot mutex prevents conflicting reservation operations and gate operations inside one running Node.js process. If the application is deployed with multiple Node processes or replicas, add a MongoDB replica-set transaction/write-conflict strategy and retry handling before claiming cross-instance concurrency guarantees.
+Reservation and gate operations acquire a MongoDB-backed per-slot lease lock, so all API processes connected to the same MongoDB can coordinate on the same slot. The lock uses MongoDB's built-in unique document ID, renews its lease while the operation is running, and automatically becomes available after the lease expires if a process crashes. For production systems, wrap the multi-document vehicle-entry/exit updates in MongoDB transactions and exercise crash/retry paths before treating the workflow as production-grade.
