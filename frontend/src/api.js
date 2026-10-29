@@ -33,7 +33,12 @@ const json = (method, data) => ({ method, body: JSON.stringify(data) });
 export const api = {
   register: (data) => request('/api/auth/register', json('POST', data)),
   login: (data) => request('/api/auth/login', json('POST', data)),
-  lots: () => request('/api/lots'),
+  lots: (filters = {}) => {
+    const parameters = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== null && value !== '')
+    ).toString();
+    return request('/api/lots' + (parameters ? '?' + parameters : ''));
+  },
   lotSlots: (lotId, window = {}) => {
     const query = new URLSearchParams(window).toString();
     return request('/api/lots/' + encodeURIComponent(lotId) + '/slots' + (query ? '?' + query : ''));

@@ -129,11 +129,14 @@ function Workspace({ session, onLogout, setNotice }) {
   const [search, setSearch] = useState('');
   const [maxRate, setMaxRate] = useState('');
   const [availableOnly, setAvailableOnly] = useState(true);
+  const [searchLatitude, setSearchLatitude] = useState('');
+  const [searchLongitude, setSearchLongitude] = useState('');
   const [windowStart, setWindowStart] = useState('');
   const [windowEnd, setWindowEnd] = useState('');
   const [busy, setBusy] = useState(false);
   const [reserveSlot, setReserveSlot] = useState('');
-  const [lotForm, setLotForm] = useState({ name: '', address: '', city: '' });
+  const [vehicleRegistration, setVehicleRegistration] = useState('');
+  const [lotForm, setLotForm] = useState({ name: '', address: '', city: '', hourlyRate: '50', latitude: '', longitude: '' });
   const [slotCount, setSlotCount] = useState('10');
   const [slotPrefix, setSlotPrefix] = useState('A');
   const [gateForm, setGateForm] = useState({ reservationId: '', vehicleNumber: '' });
@@ -141,49 +144,96 @@ function Workspace({ session, onLogout, setNotice }) {
   const visibleNav = NAV.filter((item) => item.roles.includes(role));
   const selected = lots.find((lot) => String(lot._id) === selectedLot);
 
-  async function loadLots() {
-    setLoadingLots(true);
+  function selectedWindow() {
+    const start = windowStart ? new Date(windowStart) : null;
+    const end = windowEnd ? new Date(windowEnd) : null;
+    const validWindow = start && end &&
+      !Number.isNaN(start.getTime()) &&
+      !Number.isNaN(end.getTime()) &&
+      end > start;
+    return validWindow
+      ? { startTime: start.toISOString(), endTime: end.toISOString() }
+      : {};
+  }
+
+  async function loadLots(options = {}) {
+    const quiet = options.quiet === true;
+    if (!quiet) setLoadingLots(true);
+
+    const filters = { availableOnly: availableOnly ? 'true' : undefined };
+    if (search.trim()) filters.location = search.trim();
+    if (maxRate !== '') filters.maxRate = maxRate;
+
+    const hasLatitude = searchLatitude.trim() !== '';
+    const hasLongitude = searchLongitude.trim() !== '';
+    if (hasLatitude && hasLongitude) {
+      filters.lat = searchLatitude.trim();
+      filters.lng = searchLongitude.trim();
+    }
+
+    Object.assign(filters, selectedWindow());
+
     try {
-      const response = await api.lots();
+      const response = await api.lots(filters);
       const items = Array.isArray(response) ? response : (response.lots || response.items || []);
+      const range = selectedWindow();
       const withCounts = await Promise.all(items.map(async (lot) => {
+        if (Number.isFinite(lot.availableSlots) && Number.isFinite(lot.totalSlots)) {
+          return lot;
+        }
+        // Compatibility fallback while the team's backend branches are being integrated.
         try {
-          const result = await api.lotSlots(lot._id);
+          const result = await api.lotSlots(lot._id, range);
           const lotSlots = Array.isArray(result) ? result : (result.slots || result.items || []);
-          return { ...lot, availableSlots: lotSlots.filter((slot) => slot.status === 'available').length, totalSlots: lotSlots.length };
+          return {
+            ...lot,
+            availableSlots: lotSlots.filter((slot) => slot.status === 'available' || slot.isAvailable === true).length,
+            totalSlots: lotSlots.length
+          };
         } catch {
           return { ...lot, availableSlots: null, totalSlots: null };
         }
       }));
       setLots(withCounts);
     } catch (error) {
-      setNotice({ type: 'error', text: error.message });
+      if (!quiet) setNotice({ type: 'error', text: error.message });
     } finally {
-      setLoadingLots(false);
+      if (!quiet) setLoadingLots(false);
     }
   }
 
-  async function loadSlots(lotId, range = {}) {
+  async function loadSlots(lotId, range = {}, options = {}) {
     if (!lotId) { setSlots([]); return; }
     try {
       const result = await api.lotSlots(lotId, range);
       const items = Array.isArray(result) ? result : (result.slots || result.items || []);
       setSlots(items);
     } catch (error) {
-      setSlots([]);
-      setNotice({ type: 'error', text: error.message });
+      if (!options.quiet) {
+        setSlots([]);
+        setNotice({ type: 'error', text: error.message });
+      }
     }
   }
 
-  useEffect(() => { loadLots(); }, []);
+  // Keep availability current while the parking page is open. The API returns
+  // counts for the selected time window, so polling also refreshes the selected slot grid.
   useEffect(() => {
-    if (!selectedLot) { setSlots([]); return; }
-    const start = windowStart ? new Date(windowStart) : null;
-    const end = windowEnd ? new Date(windowEnd) : null;
-    const validWindow = start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start;
-    const range = validWindow ? { startTime: start.toISOString(), endTime: end.toISOString() } : {};
-    loadSlots(selectedLot, range);
-  }, [selectedLot, windowStart, windowEnd]);
+    const refresh = (quiet = false) => {
+      loadLots({ quiet });
+      if (page === 'book' && selectedLot) {
+        loadSlots(selectedLot, selectedWindow(), { quiet });
+      }
+    };
+    refresh(false);
+    const timer = window.setInterval(() => {
+      if (page === 'book' && document.visibilityState !== 'hidden') refresh(true);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [
+    page, selectedLot, search, maxRate, availableOnly,
+    searchLatitude, searchLongitude, windowStart, windowEnd
+  ]);
 
   const visibleLots = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -201,14 +251,19 @@ function Workspace({ session, onLogout, setNotice }) {
       setNotice({ type: 'error', text: 'Choose an available slot and both start and end times.' });
       return;
     }
+    if (!vehicleRegistration.trim()) {
+      setNotice({ type: 'error', text: 'Enter the vehicle registration that will use this reservation.' });
+      return;
+    }
     if (new Date(windowEnd) <= new Date(windowStart)) {
       setNotice({ type: 'error', text: 'End time must be after start time.' });
       return;
     }
     setBusy(true);
     try {
-      const result = await api.reserve({ slotId: reserveSlot, startTime: new Date(windowStart).toISOString(), endTime: new Date(windowEnd).toISOString() });
+      const result = await api.reserve({ slotId: reserveSlot, startTime: new Date(windowStart).toISOString(), endTime: new Date(windowEnd).toISOString(), vehicleRegistration: vehicleRegistration.trim().toUpperCase() });
       setNotice({ type: 'success', text: 'Reservation confirmed. Reference: ' + (result.reservationId || (result.reservation && result.reservation._id) || 'created') });
+      setVehicleRegistration('');
       await loadSlots(selectedLot, { startTime: new Date(windowStart).toISOString(), endTime: new Date(windowEnd).toISOString() });
       await loadLots();
     } catch (error) {
@@ -220,11 +275,33 @@ function Workspace({ session, onLogout, setNotice }) {
 
   async function createLot(event) {
     event.preventDefault();
+    const hasLatitude = lotForm.latitude.trim() !== '';
+    const hasLongitude = lotForm.longitude.trim() !== '';
+    if (hasLatitude !== hasLongitude) {
+      setNotice({ type: 'error', text: 'Provide both latitude and longitude, or leave both blank.' });
+      return;
+    }
+    if (!Number.isFinite(Number(lotForm.hourlyRate)) || Number(lotForm.hourlyRate) < 0) {
+      setNotice({ type: 'error', text: 'Enter a valid non-negative hourly rate.' });
+      return;
+    }
+
+    const payload = {
+      name: lotForm.name.trim(),
+      address: lotForm.address.trim(),
+      city: lotForm.city.trim(),
+      hourlyRate: Number(lotForm.hourlyRate),
+    };
+    if (hasLatitude && hasLongitude) {
+      payload.latitude = Number(lotForm.latitude);
+      payload.longitude = Number(lotForm.longitude);
+    }
+
     setBusy(true);
     try {
-      await api.createLot(lotForm);
+      await api.createLot(payload);
       setNotice({ type: 'success', text: 'Parking lot created.' });
-      setLotForm({ name: '', address: '', city: '' });
+      setLotForm({ name: '', address: '', city: '', hourlyRate: '50', latitude: '', longitude: '' });
       await loadLots();
     } catch (error) {
       setNotice({ type: 'error', text: error.message });
@@ -289,7 +366,10 @@ function Workspace({ session, onLogout, setNotice }) {
           <div className="search-panel">
             <label className="search-input"><Search size={18} /><input aria-label="Search parking lots" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by lot, address or city" /></label>
             <label className="rate-input">Max hourly rate <input aria-label="Maximum hourly rate" type="number" min="0" value={maxRate} onChange={(event) => setMaxRate(event.target.value)} placeholder="Any" /></label>
+            <label className="rate-input">Your latitude <input aria-label="Search latitude" type="number" min="-90" max="90" step="any" value={searchLatitude} onChange={(event) => setSearchLatitude(event.target.value)} placeholder="Optional" /></label>
+            <label className="rate-input">Your longitude <input aria-label="Search longitude" type="number" min="-180" max="180" step="any" value={searchLongitude} onChange={(event) => setSearchLongitude(event.target.value)} placeholder="Optional" /></label>
             <label className="check-input"><input type="checkbox" checked={availableOnly} onChange={(event) => setAvailableOnly(event.target.checked)} /> Available only</label>
+            {(searchLatitude.trim() !== '') !== (searchLongitude.trim() !== '') && <p className="field-hint">Enter both coordinates to sort by distance.</p>}
           </div>
           <div className="section-heading"><div><h3>Parking lots</h3><p>{visibleLots.length} locations in your results</p></div><button className="secondary" onClick={loadLots}><RefreshCw size={15} /> Refresh</button></div>
           {loadingLots && <p className="muted">Loading parking lots and availability…</p>}
@@ -307,7 +387,12 @@ function Workspace({ session, onLogout, setNotice }) {
             <div className="section-heading"><div><span className="eyebrow">SELECTED LOCATION</span><h3>{selected.name} · Choose a slot</h3></div><button className="icon-button" aria-label="Close booking panel" onClick={() => { setSelectedLot(''); setReserveSlot(''); }}><XCircle size={17} /></button></div>
             <div className="slot-grid">{slots.map((slot) => <button key={slot._id} disabled={slot.status !== 'available'} aria-pressed={reserveSlot === slot._id} className={'slot-tile ' + slot.status + (reserveSlot === slot._id ? ' chosen' : '')} onClick={() => setReserveSlot(slot._id)}><span>{slot.slotNumber}</span><small>{slot.status}</small></button>)}</div>
             {slots.length === 0 && <p className="muted">No slots were returned for this lot.</p>}
-            <div className="booking-form"><label>Start time<input aria-label="Reservation start time" type="datetime-local" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} required /></label><label>End time<input aria-label="Reservation end time" type="datetime-local" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} required /></label><button className="primary" disabled={busy} onClick={reserve}>Reserve selected slot <ArrowRight size={16} /></button></div>
+            <div className="booking-form">
+              <label>Start time<input aria-label="Reservation start time" type="datetime-local" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} required /></label>
+              <label>End time<input aria-label="Reservation end time" type="datetime-local" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} required /></label>
+              <label>Vehicle registration<input aria-label="Booking vehicle registration" value={vehicleRegistration} onChange={(event) => setVehicleRegistration(event.target.value.toUpperCase())} maxLength={20} required placeholder="e.g. KA01AB1234" /></label>
+              <button className="primary" disabled={busy} onClick={reserve}>Reserve selected slot <ArrowRight size={16} /></button>
+            </div>
           </section>}
         </section>}
 
@@ -324,7 +409,21 @@ function Workspace({ session, onLogout, setNotice }) {
 
         {page === 'admin' && role === 'admin' && <section className="content">
           <div className="page-intro"><div><h2>Manage parking capacity.</h2><p>Create lots and seed their slots for drivers to reserve.</p></div><div className="intro-icon"><LayoutDashboard size={28} /></div></div>
-          <form className="admin-card" onSubmit={createLot}><h3>Create a parking lot</h3><div className="form-row"><label>Lot name<input required minLength={2} value={lotForm.name} onChange={(event) => setLotForm({ ...lotForm, name: event.target.value })} placeholder="Central Parking" /></label><label>City<input required minLength={2} value={lotForm.city} onChange={(event) => setLotForm({ ...lotForm, city: event.target.value })} placeholder="Bengaluru" /></label></div><label>Address<input required minLength={3} value={lotForm.address} onChange={(event) => setLotForm({ ...lotForm, address: event.target.value })} placeholder="Street and area" /></label><button className="primary" disabled={busy}>Create lot <ArrowRight size={16} /></button></form>
+          <form className="admin-card" onSubmit={createLot}>
+            <h3>Create a parking lot</h3>
+            <div className="form-row">
+              <label>Lot name<input required minLength={2} value={lotForm.name} onChange={(event) => setLotForm({ ...lotForm, name: event.target.value })} placeholder="Central Parking" /></label>
+              <label>City<input required minLength={2} value={lotForm.city} onChange={(event) => setLotForm({ ...lotForm, city: event.target.value })} placeholder="Bengaluru" /></label>
+            </div>
+            <label>Address<input required minLength={3} value={lotForm.address} onChange={(event) => setLotForm({ ...lotForm, address: event.target.value })} placeholder="Street and area" /></label>
+            <label>Hourly rate (₹/hour)<input aria-label="Lot hourly rate" required type="number" min="0" step="0.01" value={lotForm.hourlyRate} onChange={(event) => setLotForm({ ...lotForm, hourlyRate: event.target.value })} placeholder="50" /></label>
+            <div className="form-row">
+              <label>Latitude <span className="optional">optional</span><input aria-label="Lot latitude" type="number" min="-90" max="90" step="any" value={lotForm.latitude} onChange={(event) => setLotForm({ ...lotForm, latitude: event.target.value })} placeholder="12.9716" /></label>
+              <label>Longitude <span className="optional">optional</span><input aria-label="Lot longitude" type="number" min="-180" max="180" step="any" value={lotForm.longitude} onChange={(event) => setLotForm({ ...lotForm, longitude: event.target.value })} placeholder="77.5946" /></label>
+            </div>
+            <p className="field-hint">Add both coordinates to enable distance-based search sorting.</p>
+            <button className="primary" disabled={busy}>Create lot <ArrowRight size={16} /></button>
+          </form>
           <form className="admin-card" onSubmit={bulkSlots}><h3>Bulk-create slots</h3><label>Target lot<select value={selectedLot} onChange={(event) => setSelectedLot(event.target.value)} required><option value="">Choose a lot</option>{lots.map((lot) => <option key={lot._id} value={lot._id}>{lot.name}</option>)}</select></label><div className="form-row"><label>Prefix<input value={slotPrefix} onChange={(event) => setSlotPrefix(event.target.value)} maxLength={10} required /></label><label>Number of slots<input type="number" min="1" max="500" value={slotCount} onChange={(event) => setSlotCount(event.target.value)} required /></label></div><button className="primary" disabled={busy || !selectedLot}>Create slots <ArrowRight size={16} /></button></form>
         </section>}
         <footer className="page-footer"><span><ShieldCheck size={15} /> Role-based navigation enabled</span><span>VPS · Sprint 1</span></footer>
