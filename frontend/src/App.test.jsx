@@ -85,4 +85,50 @@ describe('Vehicle Parking System frontend', () => {
     expect(screen.getByRole('heading', { name: /gate kiosk/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/vehicle registration number/i)).toBeInTheDocument();
   });
+
+  it('stores the returned session token and opens role-aware navigation after login', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, {
+      token: 'signed-test-token',
+      user: { _id: 'user-1', name: 'Driver One', role: 'driver' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/email or phone number/i), { target: { value: 'driver@example.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'ValidPass!123' } });
+    const signInButtons = screen.getAllByRole('button', { name: /sign in/i });
+    fireEvent.click(signInButtons[signInButtons.length - 1]);
+    await waitFor(() => expect(screen.getByRole('navigation', { name: /main navigation/i })).toBeInTheDocument());
+    expect(window.localStorage.getItem('vps.token')).toBe('signed-test-token');
+    expect(screen.getByRole('button', { name: /find parking/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /gate kiosk/i })).not.toBeInTheDocument();
+  });
+
+  it('sends authenticated entry and exit actions from the attendant kiosk', async () => {
+    window.localStorage.setItem('vps.token', 'attendant-token');
+    window.localStorage.setItem('vps.user', JSON.stringify({ name: 'Attendant', role: 'attendant' }));
+    const fetchMock = vi.fn().mockImplementation(async (url) => {
+      if (String(url).endsWith('/api/lots')) return jsonResponse(200, { lots: [] });
+      if (String(url).endsWith('/api/tracking/entry')) return jsonResponse(200, { message: 'Entry recorded.' });
+      if (String(url).endsWith('/api/tracking/exit')) return jsonResponse(200, { message: 'Exit recorded.' });
+      return jsonResponse(404, { message: 'Not found.' });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/reservation id/i), { target: { value: 'reservation-123' } });
+    fireEvent.change(screen.getByLabelText(/vehicle registration number/i), { target: { value: 'KA01AB1234' } });
+    fireEvent.click(screen.getByRole('button', { name: /record entry/i }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/entry recorded/i));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/tracking/entry', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer attendant-token' }),
+    })));
+    await waitFor(() => expect(screen.getByRole('button', { name: /record exit/i })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText(/reservation id/i), { target: { value: 'reservation-123' } });
+    fireEvent.change(screen.getByLabelText(/vehicle registration number/i), { target: { value: 'KA01AB1234' } });
+    fireEvent.click(screen.getByRole('button', { name: /record exit/i }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/exit recorded/i));
+    expect(fetchMock).toHaveBeenCalledWith('/api/tracking/exit', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer attendant-token' }),
+    }));
+  });
+
 });
