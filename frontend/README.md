@@ -31,9 +31,9 @@ The frontend calls:
 - `POST /api/tracking/entry`
 - `POST /api/tracking/exit`
 
-The currently available backend feature branch implements authentication and lot/slot management. Reservation and tracking endpoints are owned by the booking/tracking teammate and must be integrated before those flows pass end-to-end. If the API request fails, the screen displays the API error; it does not report a fake successful reservation or gate event.
+The backend API routes for authentication, lot/slot search, reservation, and tracking are present in the repository. Reservation creation requires a driver/admin JWT; gate entry and exit require an attendant/admin JWT. Gate entry is accepted only for a confirmed reservation inside its active time window and when the submitted vehicle registration matches the booking. The API returns HTTP 409 for reservation conflicts or rejected gate operations. Run the backend test suite as well as the frontend tests to verify integration against MongoDB (the backend tests use `mongodb-memory-server`). If the backend branch deployed to your environment does not include these routes, merge the booking/tracking workstream before deploying.
 
-The backend lot model currently does not include pricing data. The rate filter works when the API returns an `hourlyRate` or `hourly_rate` field; lots with unknown rates do not match a specified maximum-rate filter.
+The backend lot model supports an optional `hourlyRate` and latitude/longitude. The maximum-rate filter is applied by the API, and coordinate searches are sorted by distance when coordinates are present.
 
 ## Verification
 
