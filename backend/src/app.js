@@ -5,7 +5,7 @@ const authRoutes = require('./routes/authRoutes');
 const lotRoutes = require('./routes/lotRoutes');
 const slotRoutes = require('./routes/slotRoutes');
 const trackingRoutes = require('./routes/trackingRoutes');
-const realtimeRoutes = require('./routes/realtimeRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 const configuredOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173,http://localhost:3000')
@@ -37,7 +37,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/lots', lotRoutes);
 app.use('/api/slots', slotRoutes);
 app.use('/api/tracking', trackingRoutes);
-app.use('/api/realtime', realtimeRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ message: 'Endpoint not found.' });
@@ -55,6 +55,9 @@ app.use((error, _req, res, _next) => {
   }
   if (error && error.name === 'ValidationError') {
     return res.status(400).json({ message: 'Submitted fields are invalid.' });
+  }
+  if (error && error.message === 'Password reset delivery provider is not configured.') {
+    return res.status(503).json({ message: 'Password reset delivery is temporarily unavailable.' });
   }
   console.error(error);
   return res.status(500).json({ message: 'Internal server error.' });

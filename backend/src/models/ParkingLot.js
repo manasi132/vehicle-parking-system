@@ -23,11 +23,18 @@ const parkingLotSchema = new mongoose.Schema(
       minlength: 2,
       maxlength: 100
     },
-    // Optional until an administrator configures a tariff.
+    // Base hourly rate configured by an administrator.
     hourlyRate: {
       type: Number,
       min: 0,
       default: null
+    },
+    // Daily recurring peak window. Hours are interpreted in UTC by the fee estimator.
+    peakPricing: {
+      enabled: { type: Boolean, default: false },
+      startHour: { type: Number, min: 0, max: 23, default: 17 },
+      endHour: { type: Number, min: 0, max: 23, default: 20 },
+      multiplier: { type: Number, min: 1, max: 10, default: 1.5 }
     },
     // Used to sort lots by distance when the client supplies coordinates.
     latitude: {

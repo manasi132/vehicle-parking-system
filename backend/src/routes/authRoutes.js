@@ -1,7 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const asyncHandler = require('../utils/asyncHandler');
-const { register, login } = require('../controllers/authController');
+const { register, login, requestPasswordReset, confirmPasswordReset } = require('../controllers/authController');
 const router = express.Router();
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -12,4 +12,6 @@ const authLimiter = rateLimit({
 });
 router.post('/register', authLimiter, asyncHandler(register));
 router.post('/login', authLimiter, asyncHandler(login));
+router.post('/password/forgot', authLimiter, asyncHandler(requestPasswordReset));
+router.post('/password/reset', authLimiter, asyncHandler(confirmPasswordReset));
 module.exports = router;

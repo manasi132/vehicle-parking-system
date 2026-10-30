@@ -32,6 +32,8 @@ const vehicleEntrySchema = new mongoose.Schema(
       ref: 'User',
       required: true
     },
+    entryTriggerSource: { type: String, enum: ['MANUAL', 'ANPR_SIM'], default: 'MANUAL' },
+    exitTriggerSource: { type: String, enum: ['MANUAL', 'ANPR_SIM'], default: null },
     exitedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

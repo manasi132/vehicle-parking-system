@@ -11,6 +11,7 @@ on:
   push:
     branches:
       - feat/manavi-sprint1-booking-tracking
+      - feat/manavi-sprint2-booking-tracking
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'

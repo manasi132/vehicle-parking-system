@@ -15,6 +15,8 @@ const Reservation = require('../src/models/Reservation');
 const VehicleEntry = require('../src/models/VehicleEntry');
 const TrackingAlert = require('../src/models/TrackingAlert');
 const SlotLock = require('../src/models/SlotLock');
+const AuditLog = require('../src/models/AuditLog');
+const { subscribeSlotUpdates } = require('../src/utils/realtime');
 
 let mongo;
 
@@ -35,7 +37,8 @@ beforeAll(async () => {
     Reservation.init(),
     VehicleEntry.init(),
     TrackingAlert.init(),
-    SlotLock.init()
+    SlotLock.init(),
+    AuditLog.init()
   ]);
 });
 
@@ -47,7 +50,8 @@ afterEach(async () => {
     Reservation.deleteMany({}),
     ParkingSlot.deleteMany({}),
     ParkingLot.deleteMany({}),
-    User.deleteMany({})
+    User.deleteMany({}),
+    AuditLog.deleteMany({})
   ]);
 });
 
@@ -391,5 +395,161 @@ describe('Manavi Sprint 1 — slot search, reservation and vehicle tracking', ()
       .set('Authorization', 'Bearer ' + driverToken)
       .send({ reservationId: new mongoose.Types.ObjectId().toString(), vehicleNumber: 'KA01AB1234' });
     expect(response.status).toBe(403);
+  });
+});
+
+describe('Manavi Sprint 2 — cancellation, gate automation, alerts and live occupancy', () => {
+  test('only the reservation owner can cancel a future confirmed booking and cancellation emits availability', async () => {
+    const adminToken = await createUserToken('admin');
+    const ownerToken = await createUserToken('driver');
+    const lot = await createLot(adminToken, { name: 'Cancellation Lot' });
+    const slots = await createSlots(adminToken, lot._id, ['CAN-001']);
+    const window = windowAroundNow(60 * 60 * 1000, 60 * 60 * 1000);
+
+    const reservation = await request(app).post('/api/slots/reserve')
+      .set('Authorization', 'Bearer ' + ownerToken)
+      .send({ slotId: slots[0]._id, ...window, vehicleRegistration: 'KA01AB1234' });
+    expect(reservation.status).toBe(201);
+
+    const events = [];
+    const unsubscribe = subscribeSlotUpdates((event) => events.push(event));
+    const forbidden = await request(app).post('/api/slots/' + reservation.body.reservationId + '/cancel')
+      .set('Authorization', 'Bearer ' + adminToken);
+    expect(forbidden.status).toBe(403);
+
+    const cancelled = await request(app).post('/api/slots/' + reservation.body.reservationId + '/cancel')
+      .set('Authorization', 'Bearer ' + ownerToken);
+    unsubscribe();
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.reservation.status).toBe('cancelled');
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ slotId: String(slots[0]._id), lotId: String(lot._id), status: 'available' });
+
+    const availability = await request(app).get('/api/lots/' + lot._id + '/availability').query(window);
+    expect(availability.status).toBe(200);
+    expect(availability.body.availableSlots).toBe(1);
+
+    const duplicate = await request(app).post('/api/slots/' + reservation.body.reservationId + '/cancel')
+      .set('Authorization', 'Bearer ' + ownerToken);
+    expect(duplicate.status).toBe(409);
+  });
+
+  test('does not allow cancellation after a reservation has started or completed', async () => {
+    const adminToken = await createUserToken('admin');
+    const driverToken = await createUserToken('driver');
+    const attendantToken = await createUserToken('attendant');
+    const lot = await createLot(adminToken, { name: 'Started Cancellation Lot' });
+    const slots = await createSlots(adminToken, lot._id, ['CAN-STARTED', 'CAN-COMPLETED']);
+
+    const startedWindow = windowAroundNow(30 * 60 * 1000, 60 * 60 * 1000);
+    const started = await request(app).post('/api/slots/reserve').set('Authorization', 'Bearer ' + driverToken)
+      .send({ slotId: slots[0]._id, ...startedWindow, vehicleRegistration: 'KA01AB2233' });
+    expect(started.status).toBe(201);
+    await Reservation.updateOne({ _id: started.body.reservationId }, { $set: { startTime: new Date(Date.now() - 60000) } });
+    const startedCancel = await request(app).post('/api/slots/' + started.body.reservationId + '/cancel')
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(startedCancel.status).toBe(409);
+
+    const completedWindow = windowAroundNow(-2 * 60 * 1000, 60 * 60 * 1000);
+    const completed = await request(app).post('/api/slots/reserve').set('Authorization', 'Bearer ' + driverToken)
+      .send({ slotId: slots[1]._id, ...completedWindow, vehicleRegistration: 'KA01AB2233' });
+    expect(completed.status).toBe(201);
+    const entry = await request(app).post('/api/tracking/entry').set('Authorization', 'Bearer ' + attendantToken)
+      .send({ reservationId: completed.body.reservationId, vehicleNumber: 'KA01AB2233' });
+    expect(entry.status).toBe(201);
+    const exit = await request(app).post('/api/tracking/exit').set('Authorization', 'Bearer ' + attendantToken)
+      .send({ reservationId: completed.body.reservationId, vehicleNumber: 'KA01AB2233' });
+    expect(exit.status).toBe(200);
+    const completedCancel = await request(app).post('/api/slots/' + completed.body.reservationId + '/cancel')
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(completedCancel.status).toBe(409);
+  });
+
+  test('returns stay duration on exit, frees the slot and emits slot status updates', async () => {
+    const adminToken = await createUserToken('admin');
+    const driverToken = await createUserToken('driver');
+    const attendantToken = await createUserToken('attendant');
+    const lot = await createLot(adminToken, { name: 'Exit Duration Lot' });
+    const slots = await createSlots(adminToken, lot._id, ['EXIT-001']);
+    const window = windowAroundNow(-2 * 60 * 1000, 2 * 60 * 60 * 1000);
+    const reservation = await request(app).post('/api/slots/reserve').set('Authorization', 'Bearer ' + driverToken)
+      .send({ slotId: slots[0]._id, ...window, vehicleRegistration: 'KA02AB3344' });
+    expect(reservation.status).toBe(201);
+
+    const events = [];
+    const unsubscribe = subscribeSlotUpdates((event) => events.push(event));
+    const entry = await request(app).post('/api/tracking/entry').set('Authorization', 'Bearer ' + attendantToken)
+      .send({ reservationId: reservation.body.reservationId, vehicleNumber: 'KA02AB3344' });
+    expect(entry.status).toBe(201);
+    await VehicleEntry.updateOne({ reservation: reservation.body.reservationId }, { $set: { entryAt: new Date(Date.now() - 5 * 60000) } });
+
+    const exit = await request(app).post('/api/tracking/exit').set('Authorization', 'Bearer ' + attendantToken)
+      .send({ reservationId: reservation.body.reservationId, vehicleNumber: 'KA02AB3344' });
+    unsubscribe();
+    expect(exit.status).toBe(200);
+    expect(exit.body.durationMinutes).toBeGreaterThanOrEqual(5);
+    expect(exit.body.durationMinutes).toBeLessThanOrEqual(6);
+    expect(exit.body.entryAt).toBeTruthy();
+    expect(exit.body.exitAt).toBeTruthy();
+    expect((await ParkingSlot.findById(slots[0]._id)).status).toBe('available');
+    expect(events.map((event) => event.status)).toEqual(['occupied', 'available']);
+  });
+
+  test('simulated ANPR entry and exit reuse the tracking logic and record trigger source', async () => {
+    const adminToken = await createUserToken('admin');
+    const driverToken = await createUserToken('driver');
+    const attendantToken = await createUserToken('attendant');
+    const lot = await createLot(adminToken, { name: 'ANPR Simulation Lot' });
+    const slots = await createSlots(adminToken, lot._id, ['ANPR-001']);
+    const window = windowAroundNow(-60000, 60 * 60 * 1000);
+    const reservation = await request(app).post('/api/slots/reserve').set('Authorization', 'Bearer ' + driverToken)
+      .send({ slotId: slots[0]._id, ...window, vehicleRegistration: 'KA03CD4455' });
+    expect(reservation.status).toBe(201);
+
+    const entry = await request(app).post('/api/tracking/simulate-scan').set('Authorization', 'Bearer ' + attendantToken)
+      .send({ eventType: 'entry', reservationId: reservation.body.reservationId, vehicleNumber: 'KA03CD4455', gate: 'North Gate' });
+    expect(entry.status).toBe(201);
+    expect(entry.body.triggerSource).toBe('ANPR_SIM');
+    expect((await VehicleEntry.findOne({ reservation: reservation.body.reservationId })).entryTriggerSource).toBe('ANPR_SIM');
+
+    const exit = await request(app).post('/api/tracking/simulate-scan').set('Authorization', 'Bearer ' + attendantToken)
+      .send({ eventType: 'exit', reservationId: reservation.body.reservationId, vehicleNumber: 'KA03CD4455', gate: 'North Gate' });
+    expect(exit.status).toBe(200);
+    expect(exit.body.triggerSource).toBe('ANPR_SIM');
+    expect((await VehicleEntry.findOne({ reservation: reservation.body.reservationId })).exitTriggerSource).toBe('ANPR_SIM');
+
+    const invalid = await request(app).post('/api/tracking/simulate-scan').set('Authorization', 'Bearer ' + attendantToken)
+      .send({ eventType: 'arrival', reservationId: reservation.body.reservationId, vehicleNumber: 'KA03CD4455' });
+    expect(invalid.status).toBe(400);
+    const forbidden = await request(app).post('/api/tracking/simulate-scan').set('Authorization', 'Bearer ' + driverToken)
+      .send({ eventType: 'entry', reservationId: reservation.body.reservationId, vehicleNumber: 'KA03CD4455' });
+    expect(forbidden.status).toBe(403);
+  });
+
+  test('stores typed gate alerts and returns them newest first to admins only', async () => {
+    const adminToken = await createUserToken('admin');
+    const attendantToken = await createUserToken('attendant');
+    const attendant = await User.findOne({ email: 'attendant@vps-test.example' });
+    await TrackingAlert.create({
+      reservationId: 'older-reservation', vehicleRegistration: 'KA04EF5566',
+      type: 'UNAUTHORIZED_VEHICLE', reason: 'Older unauthorized entry attempt',
+      gate: 'South Gate', attemptedBy: attendant._id, createdAt: new Date(Date.now() - 60000)
+    });
+    await TrackingAlert.create({
+      reservationId: 'newer-reservation', vehicleRegistration: 'KA05GH6677',
+      type: 'UNAUTHORIZED_VEHICLE', reason: 'Newer unauthorized entry attempt',
+      gate: 'North Gate', attemptedBy: attendant._id, createdAt: new Date()
+    });
+
+    const response = await request(app).get('/api/tracking/alerts').set('Authorization', 'Bearer ' + adminToken);
+    expect(response.status).toBe(200);
+    expect(response.body.alerts.map((alert) => alert.reservationId)).toEqual(['newer-reservation', 'older-reservation']);
+    expect(response.body.alerts[0]).toMatchObject({
+      type: 'UNAUTHORIZED_VEHICLE', vehicleRegistration: 'KA05GH6677', gate: 'North Gate'
+    });
+    const forbidden = await request(app).get('/api/tracking/alerts').set('Authorization', 'Bearer ' + attendantToken);
+    expect(forbidden.status).toBe(403);
+    const invalidLimit = await request(app).get('/api/tracking/alerts?limit=0').set('Authorization', 'Bearer ' + adminToken);
+    expect(invalidLimit.status).toBe(400);
   });
 });
