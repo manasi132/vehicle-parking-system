@@ -266,6 +266,7 @@ describe('Manasi Sprint 2 API stories', () => {
     ]);
     expect(logs.every((log) => String(log.actor) === String(user._id))).toBe(true);
     expect(logs.every((log) => log.occurredAt instanceof Date)).toBe(true);
+    expect(logs.every((log) => Boolean(log.targetId))).toBe(true);
     expect(logs.some((log) => Object.prototype.hasOwnProperty.call(log, 'temporaryPassword'))).toBe(false);
 
     const auditEndpoint = await request(app).get('/api/admin/audit-logs')
