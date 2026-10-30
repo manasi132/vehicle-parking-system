@@ -365,12 +365,16 @@ describe('Manavi Sprint 1 — slot search, reservation and vehicle tracking', ()
       .set('Authorization', 'Bearer ' + attendantToken)
       .send({
         reservationId: reservation.body.reservationId,
-        vehicleNumber: 'KA09XY9999'
+        vehicleNumber: 'KA09XY9999',
+        gate: 'North Gate'
       });
 
     expect(mismatchedEntry.status).toBe(409);
     expect(mismatchedEntry.body.alertId).toBeTruthy();
     expect(await TrackingAlert.countDocuments({ reservationId: reservation.body.reservationId })).toBe(1);
+    const alert = await TrackingAlert.findById(mismatchedEntry.body.alertId);
+    expect(alert).toMatchObject({ type: 'UNAUTHORIZED_VEHICLE', vehicleRegistration: 'KA09XY9999', gate: 'North Gate' });
+    expect(alert.createdAt).toBeInstanceOf(Date);
     expect((await ParkingSlot.findById(slots[0]._id)).status).toBe('available');
   });
 
@@ -493,6 +497,9 @@ describe('Manavi Sprint 2 — cancellation, gate automation, alerts and live occ
     expect(exit.body.exitAt).toBeTruthy();
     expect((await ParkingSlot.findById(slots[0]._id)).status).toBe('available');
     expect(events.map((event) => event.status)).toEqual(['occupied', 'available']);
+    const repeatedExit = await request(app).post('/api/tracking/exit').set('Authorization', 'Bearer ' + attendantToken)
+      .send({ reservationId: reservation.body.reservationId, vehicleNumber: 'KA02AB3344' });
+    expect(repeatedExit.status).toBe(404);
   });
 
   test('simulated ANPR entry and exit reuse the tracking logic and record trigger source', async () => {
