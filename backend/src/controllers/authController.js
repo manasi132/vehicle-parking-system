@@ -15,7 +15,7 @@ function createToken(user) {
 }
 
 function hashOtp(value) {
-  return crypto.createHash('sha256').update(String(value)).digest('hex');
+  return crypto.createHmac('sha256', process.env.JWT_SECRET).update(String(value)).digest('hex');
 }
 
 async function register(req, res) {
