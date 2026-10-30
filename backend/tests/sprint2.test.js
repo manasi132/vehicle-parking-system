@@ -225,6 +225,23 @@ describe('Manasi Sprint 2 API stories', () => {
     expect(response.status).toBe(403);
   });
 
+
+  test('fee estimate uses the saved hourly rate and peak multiplier', async () => {
+    const { user, token } = await createUser('admin');
+    const lot = await createLot(user._id, 'Fee Estimate Lot');
+    const saved = await request(app).post('/api/admin/lots/' + lot._id + '/pricing')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ hourlyRate: 20, peakPricing: { enabled: true, startHour: 17, endHour: 21, multiplier: 2 } });
+    expect(saved.status).toBe(200);
+    const estimate = await request(app).get('/api/lots/' + lot._id + '/fee-estimate')
+      .query({ startTime: '2026-10-30T17:00:00.000Z', endTime: '2026-10-30T19:00:00.000Z' });
+    expect(estimate.status).toBe(200);
+    expect(estimate.body.estimatedFee).toBe(80);
+    const invalid = await request(app).get('/api/lots/' + lot._id + '/fee-estimate')
+      .query({ startTime: 'not-a-date', endTime: '2026-10-30T19:00:00.000Z' });
+    expect(invalid.status).toBe(400);
+  });
+
   test('successful admin writes create audit entries with actor, target and time but no request body', async () => {
     const { user, token } = await createUser('admin');
     const createdLot = await request(app).post('/api/lots')
