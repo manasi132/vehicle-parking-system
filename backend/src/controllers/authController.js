@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../models/User');
 const { normalizeEmail, normalizePhone, isValidEmail, isValidPhone, isStrongPassword, publicUser } = require('../utils/validation');
+const { sendPasswordResetOtp } = require('../services/passwordResetDelivery');
 
 const MAX_FAILED_LOGINS = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000;
@@ -15,18 +16,6 @@ function createToken(user) {
 
 function hashOtp(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
-}
-
-async function deliverPasswordResetOtp(user, otp) {
-  // Development adapter only. Production must integrate a real email/SMS provider.
-  if (process.env.NODE_ENV === 'production') {
-    if (typeof global.passwordResetOtpDelivery !== 'function') {
-      throw new Error('Password reset delivery provider is not configured.');
-    }
-    return global.passwordResetOtpDelivery({ user, otp });
-  }
-  // Do not return the OTP from the API. This local adapter supports developer demos.
-  console.info('[DEV PASSWORD RESET OTP]', { userId: String(user._id), otp });
 }
 
 async function register(req, res) {
@@ -106,7 +95,7 @@ async function requestPasswordReset(req, res) {
     user.passwordResetOtpHash = hashOtp(otp);
     user.passwordResetOtpExpiresAt = new Date(Date.now() + OTP_DURATION_MS);
     await user.save();
-    await deliverPasswordResetOtp(user, otp);
+    await sendPasswordResetOtp({ user, otp });
   }
   return res.status(200).json({ message: 'If the account exists, a password reset code has been sent. The code is valid for 10 minutes.' });
 }
