@@ -95,7 +95,12 @@ async function requestPasswordReset(req, res) {
     user.passwordResetOtpHash = hashOtp(otp);
     user.passwordResetOtpExpiresAt = new Date(Date.now() + OTP_DURATION_MS);
     await user.save();
-    await sendPasswordResetOtp({ user, otp });
+    try {
+      await sendPasswordResetOtp({ user, otp });
+    } catch (error) {
+      // Preserve the same public response for known and unknown accounts.
+      console.error('Password reset delivery failed:', error.message);
+    }
   }
   return res.status(200).json({ message: 'If the account exists, a password reset code has been sent. The code is valid for 10 minutes.' });
 }
