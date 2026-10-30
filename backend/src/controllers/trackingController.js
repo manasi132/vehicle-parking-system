@@ -82,12 +82,12 @@ async function recordExit(req, res) {
   const initialEntry = await VehicleEntry.findOne({ reservation: reservationId, status: 'entered' }).select('slot');
   if (!initialEntry) {
     const alert = await createAlert(req, reservationId, vehicleRegistration, 'Exit attempted without a matching active entry.', gate, 'EXIT_REJECTED');
-    return res.status(409).json({ message: 'No active vehicle entry matches this reservation.', alertId: alert._id.toString() });
+    return res.status(404).json({ message: 'No active vehicle entry matches this reservation.', alertId: alert._id.toString() });
   }
   const result = await withSlotLock(String(initialEntry.slot), async () => {
     const entry = await VehicleEntry.findOne({ reservation: reservationId, status: 'entered' });
     const reservation = await Reservation.findById(reservationId);
-    if (!entry || !reservation || reservation.status !== 'checked_in') return { error: 'No active vehicle entry matches this reservation.' };
+    if (!entry || !reservation || reservation.status !== 'checked_in') return { status: 404, error: 'No active vehicle entry matches this reservation.' };
     if (entry.vehicleRegistration !== vehicleRegistration) return { error: 'Vehicle registration does not match the active entry.' };
     const now = new Date();
     const updatedEntry = await VehicleEntry.findOneAndUpdate({ _id: entry._id, status: 'entered' }, { $set: { status: 'exited', exitAt: now, exitedBy: req.user.id, exitTriggerSource: triggerSource } }, { new: true });
@@ -109,7 +109,7 @@ async function recordExit(req, res) {
   });
   if (result.error) {
     const alert = await createAlert(req, reservationId, vehicleRegistration, result.error, gate, 'EXIT_REJECTED');
-    return res.status(409).json({ message: result.error, alertId: alert._id.toString() });
+    return res.status(result.status || 409).json({ message: result.error, alertId: alert._id.toString() });
   }
   const durationMinutes = Math.max(0, Math.ceil((result.entry.exitAt - result.entry.entryAt) / 60000));
   emitSlotUpdate(publicSlotUpdate(result.reservation, 'available', result.entry.exitAt));
