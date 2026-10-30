@@ -2,8 +2,15 @@ const AuditLog = require('../models/AuditLog');
 
 function auditAdminAction(action, targetType) {
   return function auditAdminActionMiddleware(req, res, next) {
-    res.once('finish', () => {
-      if (res.statusCode < 200 || res.statusCode >= 400 || !req.user || req.user.role !== 'admin') return;
+    const sendJson = res.json.bind(res);
+    let auditStarted = false;
+
+    res.json = function auditedJson(body) {
+      if (auditStarted || res.statusCode < 200 || res.statusCode >= 400 ||
+          !req.user || req.user.role !== 'admin') {
+        return sendJson(body);
+      }
+      auditStarted = true;
       const targetId = req.params.lotId || req.params.userId || req.params.id || null;
       AuditLog.create({
         action,
@@ -13,8 +20,10 @@ function auditAdminAction(action, targetType) {
         method: req.method,
         path: req.path,
         occurredAt: new Date()
-      }).catch((error) => console.error('Unable to persist admin audit event:', error.message));
-    });
+      }).then(() => sendJson(body)).catch(next);
+      return res;
+    };
+
     next();
   };
 }
