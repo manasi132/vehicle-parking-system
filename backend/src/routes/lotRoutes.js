@@ -20,6 +20,7 @@ const router = express.Router();
 router.get('/', asyncHandler(searchLots));
 router.get('/:lotId/slots', asyncHandler(getSlotAvailability));
 router.get('/:lotId/availability', asyncHandler(getSlotAvailability));
+router.get('/:lotId/fee-estimate', asyncHandler(estimateParkingFee));
 router.get('/:lotId', asyncHandler(getLot));
 
 // Writes require a valid server-verified admin role and are recorded without request bodies.
