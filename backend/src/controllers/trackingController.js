@@ -100,7 +100,7 @@ async function recordExit(req, res) {
     const slot = await ParkingSlot.findOneAndUpdate({ _id: reservation.slot, status: 'occupied' }, { $set: { status: 'available' } }, { new: true });
     if (!slot) {
       await Promise.all([
-        VehicleEntry.updateOne({ _id: entry._id, status: 'exited' }, { $set: { status: 'entered', exitAt: null, exitedBy: null } }),
+        VehicleEntry.updateOne({ _id: entry._id, status: 'exited' }, { $set: { status: 'entered', exitAt: null, exitedBy: null, exitTriggerSource: null } }),
         Reservation.updateOne({ _id: reservation._id, status: 'completed' }, { $set: { status: 'checked_in', exitAt: null } })
       ]);
       return { error: 'The occupied slot state changed; retry after refreshing.' };
@@ -138,10 +138,10 @@ function streamSlotUpdates(req, res) {
     'X-Accel-Buffering': 'no'
   });
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
-  res.write(': connected\\n\\n');
-  const heartbeat = setInterval(() => res.write(': keep-alive\\n\\n'), 25000);
+  res.write(': connected\n\n');
+  const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 25000);
   const unsubscribe = subscribeSlotUpdates((payload) => {
-    res.write('event: slot:update\\ndata: ' + JSON.stringify(payload) + '\\n\\n');
+    res.write('event: slot:update\ndata: ' + JSON.stringify(payload) + '\n\n');
   });
   req.on('close', () => {
     clearInterval(heartbeat);
