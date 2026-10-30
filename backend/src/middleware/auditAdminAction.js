@@ -6,7 +6,7 @@ function auditAdminAction(action, targetType) {
     let auditStarted = false;
 
     res.json = function auditedJson(body) {
-      if (auditStarted || res.statusCode < 200 || res.statusCode >= 400 ||
+      if (auditStarted || res.statusCode < 200 || res.statusCode >= 300 ||
           !req.user || req.user.role !== 'admin') {
         return sendJson(body);
       }
