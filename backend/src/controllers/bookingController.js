@@ -4,6 +4,7 @@ const ParkingSlot = require('../models/ParkingSlot');
 const Reservation = require('../models/Reservation');
 const { withSlotLock } = require('../utils/slotLock');
 const { normalizeVehicleRegistration } = require('../utils/vehicleRegistration');
+const { emitSlotUpdate } = require('../utils/realtime');
 
 const ACTIVE_RESERVATION_STATUSES = ['confirmed', 'checked_in'];
 
@@ -280,8 +281,44 @@ async function createReservation(req, res) {
   });
 }
 
+
+async function cancelReservation(req, res) {
+  const reservationId = req.params.reservationId;
+  if (!mongoose.isValidObjectId(reservationId)) return res.status(400).json({ message: 'Invalid reservation ID.' });
+  const snapshot = await Reservation.findById(reservationId).select('slot');
+  if (!snapshot) return res.status(404).json({ message: 'Reservation not found.' });
+
+  const result = await withSlotLock(String(snapshot.slot), async () => {
+    const reservation = await Reservation.findById(reservationId);
+    if (!reservation) return { status: 404, message: 'Reservation not found.' };
+    if (String(reservation.user) !== String(req.user.id)) return { status: 403, message: 'You can cancel only your own reservation.' };
+    const now = new Date();
+    if (reservation.status !== 'confirmed') return { status: 409, message: 'Only confirmed future reservations can be cancelled.' };
+    if (reservation.startTime <= now) return { status: 409, message: 'A reservation that has started or is in the past cannot be cancelled.' };
+
+    const updated = await Reservation.findOneAndUpdate(
+      { _id: reservation._id, user: req.user.id, status: 'confirmed', startTime: { $gt: now } },
+      { $set: { status: 'cancelled' } },
+      { new: true }
+    );
+    if (!updated) return { status: 409, message: 'Reservation state changed; refresh and retry.' };
+    return { reservation: updated, updatedAt: now };
+  });
+
+  if (result.status) return res.status(result.status).json({ message: result.message });
+  emitSlotUpdate({
+    slotId: String(result.reservation.slot),
+    lotId: String(result.reservation.lot),
+    status: 'available',
+    reservationId: String(result.reservation._id),
+    updatedAt: result.updatedAt.toISOString()
+  });
+  return res.status(200).json({ message: 'Reservation cancelled.', reservation: result.reservation });
+}
+
 module.exports = {
   searchLots,
   getSlotAvailability,
-  createReservation
+  createReservation,
+  cancelReservation
 };
