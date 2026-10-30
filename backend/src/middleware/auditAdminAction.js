@@ -11,7 +11,12 @@ function auditAdminAction(action, targetType) {
         return sendJson(body);
       }
       auditStarted = true;
-      const targetId = req.params.lotId || req.params.userId || req.params.id || null;
+      const responseBody = body && typeof body === 'object' ? body : {};
+      const targetId = req.params.lotId || req.params.userId || req.params.id ||
+        (responseBody.lot && responseBody.lot._id) ||
+        (responseBody.user && responseBody.user.id) ||
+        responseBody.entryId ||
+        (responseBody.slots && responseBody.slots[0] && responseBody.slots[0]._id) || null;
       AuditLog.create({
         action,
         actor: req.user.id,
