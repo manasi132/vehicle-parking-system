@@ -141,13 +141,7 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
-node_modules/
-.env
-.env.*
-!.env.example
-coverage/
-*.log
-
+/backend_backup/
 
 # Local reference documents
 TEAM 10_SE_SRS DOCUMENT.docx
