@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const ParkingLot = require('../models/ParkingLot');
 const ParkingSlot = require('../models/ParkingSlot');
+const { calculateParkingFee } = require('../utils/parkingFee');
 
 function isValidObjectId(value) {
   return mongoose.isValidObjectId(value);
