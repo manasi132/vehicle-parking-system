@@ -7,7 +7,8 @@ const {
   createLot,
   updateLot,
   deactivateLot,
-  bulkCreateSlots
+  bulkCreateSlots,
+  estimateParkingFee
 } = require('../controllers/parkingLotController');
 const {
   searchLots,
@@ -16,14 +17,14 @@ const {
 
 const router = express.Router();
 
-// Public search/availability reads compute live counts from slots and reservations.
+// Public reads: search, slot availability, and estimate based on saved tariff.
 router.get('/', asyncHandler(searchLots));
 router.get('/:lotId/slots', asyncHandler(getSlotAvailability));
 router.get('/:lotId/availability', asyncHandler(getSlotAvailability));
 router.get('/:lotId/fee-estimate', asyncHandler(estimateParkingFee));
 router.get('/:lotId', asyncHandler(getLot));
 
-// Writes require a valid server-verified admin role and are recorded without request bodies.
+// Admin writes require a verified admin role and are audited without request bodies.
 router.post('/', authenticate, authorizeRoles('admin'), auditAdminAction('lot.create', 'ParkingLot'), asyncHandler(createLot));
 router.patch('/:lotId', authenticate, authorizeRoles('admin'), auditAdminAction('lot.update', 'ParkingLot'), asyncHandler(updateLot));
 router.patch('/:lotId/deactivate', authenticate, authorizeRoles('admin'), auditAdminAction('lot.deactivate', 'ParkingLot'), asyncHandler(deactivateLot));
