@@ -1,3 +1,4 @@
+require('dotenv').config();
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-only-secret-with-more-than-32-characters';
 
@@ -6,7 +7,6 @@ jest.setTimeout(30000);
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
-const { MongoMemoryServer } = require('mongodb-memory-server');
 const app = require('../src/app');
 const User = require('../src/models/User');
 const ParkingLot = require('../src/models/ParkingLot');
@@ -19,8 +19,15 @@ const SlotLock = require('../src/models/SlotLock');
 let mongo;
 
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
-  await mongoose.connect(mongo.getUri());
+  if (process.env.MONGODB_TEST_URI) {
+    await mongoose.connect(process.env.MONGODB_TEST_URI);
+    if (mongoose.connection.name !== 'vps_test') {
+      await mongoose.disconnect();
+      throw new Error('MONGODB_TEST_URI must point to a dedicated database named vps_test.');
+    }
+  } else {
+    throw new Error('MONGODB_TEST_URI is required. Refusing to use an in-memory database.');
+  }
   await Promise.all([
     User.init(),
     ParkingLot.init(),
@@ -45,7 +52,7 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  await mongoose.disconnect();
+  if (mongoose.connection.readyState !== 0) await mongoose.disconnect();
   if (mongo) await mongo.stop();
 });
 
