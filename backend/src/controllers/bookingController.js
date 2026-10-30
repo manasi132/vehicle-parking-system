@@ -135,7 +135,7 @@ async function searchLots(req, res) {
   }
 
   const foundLots = await ParkingLot.find(filters)
-    .select('name address city hourlyRate latitude longitude isActive createdAt updatedAt')
+    .select('name address city hourlyRate peakPricing latitude longitude isActive createdAt updatedAt')
     .lean();
   const counts = await summarizeAvailability(foundLots, window);
   let lots = foundLots.map((lot) => {
@@ -177,7 +177,7 @@ async function getSlotAvailability(req, res) {
   if (window.error) return res.status(400).json({ message: window.error });
 
   const lot = await ParkingLot.findOne({ _id: req.params.lotId, isActive: true })
-    .select('name address city hourlyRate latitude longitude isActive')
+    .select('name address city hourlyRate peakPricing latitude longitude isActive')
     .lean();
   if (!lot) return res.status(404).json({ message: 'Parking lot not found.' });
 

@@ -1,11 +1,21 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const User = require('../models/User');
 const { normalizeEmail, normalizePhone, isValidEmail, isValidPhone, isStrongPassword, publicUser } = require('../utils/validation');
+const { sendPasswordResetOtp } = require('../services/passwordResetDelivery');
+
+const MAX_FAILED_LOGINS = 5;
+const LOCK_DURATION_MS = 15 * 60 * 1000;
+const OTP_DURATION_MS = 10 * 60 * 1000;
 
 function createToken(user) {
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters.');
   return jwt.sign({ sub: user._id.toString(), role: user.role }, process.env.JWT_SECRET, { expiresIn: '2h' });
+}
+
+function hashOtp(value) {
+  return crypto.createHmac('sha256', process.env.JWT_SECRET).update(String(value)).digest('hex');
 }
 
 async function register(req, res) {
@@ -44,10 +54,80 @@ async function login(req, res) {
   if (normalizedEmail && normalizedEmail.includes('@')) query.push({ email: normalizedEmail });
   if (normalizedPhone && /^\+?\d{7,15}$/.test(normalizedPhone)) query.push({ phone: normalizedPhone });
   if (query.length === 0) return res.status(401).json({ message: 'Invalid credentials.' });
-  const user = await User.findOne({ $or: query }).select('+passwordHash');
-  const isMatch = user && user.isActive ? await bcrypt.compare(password, user.passwordHash) : false;
-  if (!isMatch) return res.status(401).json({ message: 'Invalid credentials.' });
+  const user = await User.findOne({ $or: query }).select('+passwordHash +failedLoginAttempts +lockedUntil');
+  if (!user || !user.isActive) return res.status(401).json({ message: 'Invalid credentials.' });
+  const now = new Date();
+  if (user.lockedUntil && user.lockedUntil > now) {
+    return res.status(423).json({ message: 'Account temporarily locked. Try again after the lock period.' });
+  }
+  if (user.lockedUntil && user.lockedUntil <= now) {
+    user.lockedUntil = null;
+    user.failedLoginAttempts = 0;
+  }
+  const isMatch = await bcrypt.compare(password, user.passwordHash);
+  if (!isMatch) {
+    user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+    if (user.failedLoginAttempts >= MAX_FAILED_LOGINS) {
+      user.lockedUntil = new Date(now.getTime() + LOCK_DURATION_MS);
+      await user.save();
+      return res.status(423).json({ message: 'Account temporarily locked after repeated failed logins. Try again in 15 minutes.' });
+    }
+    await user.save();
+    return res.status(401).json({ message: 'Invalid credentials.' });
+  }
+  user.failedLoginAttempts = 0;
+  user.lockedUntil = null;
+  await user.save();
   const token = createToken(user);
   return res.status(200).json({ token, expiresInSeconds: 7200, role: user.role, user: publicUser(user) });
 }
-module.exports = { register, login };
+
+async function requestPasswordReset(req, res) {
+  const identifier = typeof req.body.identifier === 'string' ? req.body.identifier.trim() : '';
+  if (!identifier) return res.status(400).json({ message: 'Email or phone is required.' });
+  const email = normalizeEmail(identifier);
+  const phone = normalizePhone(identifier);
+  const query = email && email.includes('@') ? { email } : { phone };
+  const user = await User.findOne(query);
+  // Keep response identical for existing and unknown accounts to prevent account enumeration.
+  if (user && user.isActive) {
+    const otp = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    user.passwordResetOtpHash = hashOtp(otp);
+    user.passwordResetOtpExpiresAt = new Date(Date.now() + OTP_DURATION_MS);
+    await user.save();
+    try {
+      await sendPasswordResetOtp({ user, otp });
+    } catch (error) {
+      // Preserve the same public response for known and unknown accounts.
+      console.error('Password reset delivery failed:', error.message);
+    }
+  }
+  return res.status(200).json({ message: 'If the account exists, a password reset code has been sent. The code is valid for 10 minutes.' });
+}
+
+async function confirmPasswordReset(req, res) {
+  const identifier = typeof req.body.identifier === 'string' ? req.body.identifier.trim() : '';
+  const otp = typeof req.body.otp === 'string' ? req.body.otp.trim() : '';
+  const newPassword = req.body.newPassword;
+  if (!identifier || !/^\d{6}$/.test(otp) || !isStrongPassword(newPassword)) {
+    return res.status(400).json({ message: 'Provide an email/phone, six-digit OTP, and a strong new password.' });
+  }
+  const email = normalizeEmail(identifier);
+  const phone = normalizePhone(identifier);
+  const query = email && email.includes('@') ? { email } : { phone };
+  const user = await User.findOne(query).select('+passwordResetOtpHash +passwordResetOtpExpiresAt');
+  if (!user || !user.passwordResetOtpHash || !user.passwordResetOtpExpiresAt ||
+      user.passwordResetOtpExpiresAt <= new Date() ||
+      !crypto.timingSafeEqual(Buffer.from(user.passwordResetOtpHash), Buffer.from(hashOtp(otp)))) {
+    return res.status(400).json({ message: 'The reset code is invalid or expired.' });
+  }
+  user.passwordHash = await bcrypt.hash(newPassword, 12);
+  user.passwordResetOtpHash = null;
+  user.passwordResetOtpExpiresAt = null;
+  user.failedLoginAttempts = 0;
+  user.lockedUntil = null;
+  await user.save();
+  return res.status(200).json({ message: 'Password has been reset successfully.' });
+}
+
+module.exports = { register, login, requestPasswordReset, confirmPasswordReset };

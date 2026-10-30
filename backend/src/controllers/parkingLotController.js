@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const ParkingLot = require('../models/ParkingLot');
 const ParkingSlot = require('../models/ParkingSlot');
+const { calculateParkingFee } = require('../utils/parkingFee');
 
 function isValidObjectId(value) {
   return mongoose.isValidObjectId(value);
@@ -61,7 +62,7 @@ function cleanLotInput(body, allowPartial) {
 
 async function listLots(_req, res) {
   const lots = await ParkingLot.find({ isActive: true })
-    .select('name address city hourlyRate latitude longitude isActive createdAt updatedAt')
+    .select('name address city hourlyRate peakPricing latitude longitude isActive createdAt updatedAt')
     .sort({ city: 1, name: 1 })
     .lean();
   return res.status(200).json({ lots });
@@ -211,6 +212,39 @@ async function bulkCreateSlots(req, res) {
   }
 }
 
+
+async function estimateParkingFee(req, res) {
+  if (!isValidObjectId(req.params.lotId)) {
+    return res.status(400).json({ message: 'Invalid parking lot ID.' });
+  }
+  const startTime = req.query.startTime;
+  const endTime = req.query.endTime;
+  if (!startTime || !endTime) {
+    return res.status(400).json({ message: 'startTime and endTime are required.' });
+  }
+  const lot = await ParkingLot.findOne({ _id: req.params.lotId, isActive: true })
+    .select('name hourlyRate peakPricing')
+    .lean();
+  if (!lot) return res.status(404).json({ message: 'Parking lot not found.' });
+  if (!Number.isFinite(lot.hourlyRate) || lot.hourlyRate <= 0) {
+    return res.status(409).json({ message: 'Pricing has not been configured for this parking lot.' });
+  }
+  let amount;
+  try {
+    amount = calculateParkingFee(startTime, endTime, lot.hourlyRate, lot.peakPricing || {});
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
+  return res.status(200).json({
+    lotId: String(lot._id),
+    hourlyRate: lot.hourlyRate,
+    peakPricing: lot.peakPricing || { enabled: false },
+    startTime: new Date(startTime).toISOString(),
+    endTime: new Date(endTime).toISOString(),
+    estimatedFee: amount
+  });
+}
+
 module.exports = {
   listLots,
   getLot,
@@ -218,5 +252,6 @@ module.exports = {
   createLot,
   updateLot,
   deactivateLot,
-  bulkCreateSlots
+  bulkCreateSlots,
+  estimateParkingFee
 };

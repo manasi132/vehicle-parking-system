@@ -60,3 +60,8 @@ Verification levels:
 The suite includes an intentionally failing child-process assertion probe and checks for a nonzero exit, while the parent test passes only when failure propagates. No failing test is committed to the normal test suite. GitHub runs `npm test` without `continue-on-error`; a failing test therefore fails the job.
 
 **External dependency:** a repository administrator must require `test` and `tls-config` for PRs to `main` via branch protection/rulesets (including the intended bypass policy). Current account has `admin: false`; the protection API returned 404 and applicable branch rules returned `[]` during review. Passing workflows alone do not enforce merge blocking. PR #10 is the verification target; inspect its latest checks after each push. No story should be marked Done while its external acceptance checks remain outstanding.
+
+
+## Sprint 2 — Manasi backend stories
+
+Implementation details, API routes, assumptions and test instructions for Manasi's Sprint 2 backend stories are documented in [`docs/sprint2-manasi-backend.md`](docs/sprint2-manasi-backend.md).
