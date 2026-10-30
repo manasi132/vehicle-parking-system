@@ -141,3 +141,16 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+node_modules/
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+
+
+# Local reference documents
+TEAM 10_SE_SRS DOCUMENT.docx
+TEAM 10_Vehicle_Parking_System_SAD.docx
+TEAM 10_Vehicle_Parking_System_Test_Plan.docx
+VPS_Jira_Backlog.csv
