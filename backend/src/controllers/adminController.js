@@ -63,7 +63,7 @@ async function createAttendant(req, res) {
   }
   const temporaryPassword = typeof suppliedPassword === 'string' && suppliedPassword
     ? suppliedPassword
-    : crypto.randomBytes(12).toString('base64url') + 'A1!';
+    : crypto.randomBytes(12).toString('base64url') + 'aA1!';
   if (!isStrongPassword(temporaryPassword)) {
     return res.status(400).json({ message: 'Temporary password must be 8-72 characters and include uppercase, lowercase, a number, and a symbol.' });
   }
@@ -101,4 +101,12 @@ async function listAuditLogs(req, res) {
   return res.status(200).json({ logs });
 }
 
-module.exports = { setLotPricing, getOccupancy, createAttendant, listAuditLogs };
+async function listAttendants(_req, res) {
+  const attendants = await User.find({ role: 'attendant', isActive: true })
+    .select('name email phone role isActive createdAt')
+    .sort({ createdAt: -1 })
+    .lean();
+  return res.status(200).json({ attendants });
+}
+
+module.exports = { setLotPricing, getOccupancy, createAttendant, listAttendants, listAuditLogs };
