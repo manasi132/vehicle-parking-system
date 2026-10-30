@@ -104,6 +104,9 @@ describe('Manasi Sprint 2 API stories', () => {
     expect(response.status).toBe(200);
     expect(response.body).not.toHaveProperty('otp');
     expect(response.body.message).toMatch(/if the account exists/i);
+    const unknown = await request(app).post('/api/auth/password/forgot').send({ identifier: 'unknown@example.com' });
+    expect(unknown.status).toBe(response.status);
+    expect(unknown.body).toEqual(response.body);
     const otp = info.mock.calls.find((call) => call[0] === '[DEV PASSWORD RESET OTP]')[1].otp;
     expect(otp).toMatch(/^\d{6}$/);
     const stored = await User.findOne({ email: 'reset@example.com' })
