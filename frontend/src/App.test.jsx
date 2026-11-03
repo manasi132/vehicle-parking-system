@@ -70,6 +70,7 @@ describe('Vehicle Parking System frontend', () => {
     fireEvent.click(screen.getByRole('button', { name: /view slots/i }));
     await waitFor(() => expect(screen.getByRole('button', { name: /a-001/i })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /a-001/i }));
+    fireEvent.change(screen.getByLabelText(/vehicle registration/i), { target: { value: 'KA01AB1234' } });
     fireEvent.change(screen.getByLabelText(/reservation start time/i), { target: { value: '2026-11-01T10:00' } });
     fireEvent.change(screen.getByLabelText(/reservation end time/i), { target: { value: '2026-11-01T11:00' } });
     fireEvent.click(screen.getByRole('button', { name: /reserve selected slot/i }));
