@@ -33,7 +33,10 @@ const json = (method, data) => ({ method, body: JSON.stringify(data) });
 export const api = {
   register: (data) => request('/api/auth/register', json('POST', data)),
   login: (data) => request('/api/auth/login', json('POST', data)),
-  lots: () => request('/api/lots'),
+  lots: (filters = {}) => {
+    const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== '' && value != null)).toString();
+    return request('/api/lots' + (query ? '?' + query : ''));
+  },
   lotSlots: (lotId, window = {}) => {
     const query = new URLSearchParams(window).toString();
     return request('/api/lots/' + encodeURIComponent(lotId) + '/slots' + (query ? '?' + query : ''));
@@ -43,6 +46,16 @@ export const api = {
   gateExit: (data) => request('/api/tracking/exit', json('POST', data)),
   createLot: (data) => request('/api/lots', json('POST', data)),
   bulkSlots: (lotId, data) => request('/api/lots/' + encodeURIComponent(lotId) + '/slots/bulk', json('POST', data)),
+  requestPasswordReset: (identifier) => request('/api/auth/password/forgot', json('POST', { identifier })),
+  resetPassword: (data) => request('/api/auth/password/reset', json('POST', data)),
+  cancelReservation: (reservationId) => request('/api/slots/' + encodeURIComponent(reservationId) + '/cancel', { method: 'POST' }),
+  feeEstimate: (lotId, startTime, endTime) => request('/api/lots/' + encodeURIComponent(lotId) + '/fee-estimate?' + new URLSearchParams({ startTime, endTime })),
+  occupancy: () => request('/api/admin/occupancy'),
+  setPricing: (lotId, data) => request('/api/admin/lots/' + encodeURIComponent(lotId) + '/pricing', json('POST', data)),
+  attendants: () => request('/api/admin/attendants'),
+  createAttendant: (data) => request('/api/admin/attendants', json('POST', data)),
+  auditLogs: (limit = 50) => request('/api/admin/audit-logs?limit=' + encodeURIComponent(limit)),
+  charge: (data) => request('/api/payments/charge', json('POST', data)),
 };
 
 export function saveSession(session) {

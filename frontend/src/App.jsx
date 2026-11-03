@@ -4,11 +4,13 @@ import {
   LogOut, MapPin, ParkingCircle, RefreshCw, Search, ShieldCheck, UserRound, XCircle
 } from 'lucide-react';
 import { api, clearSession, readSession, saveSession } from './api.js';
+import Sprint2Panel, { PasswordReset } from './Sprint2.jsx';
 
 const NAV = [
   { id: 'book', label: 'Find parking', icon: Search, roles: ['driver', 'admin'] },
   { id: 'gate', label: 'Gate kiosk', icon: CarFront, roles: ['attendant', 'admin'] },
   { id: 'admin', label: 'Manage lots', icon: LayoutDashboard, roles: ['admin'] },
+  { id: 'sprint2', label: 'More features', icon: Activity, roles: ['driver', 'admin', 'attendant'] },
 ];
 
 function Notice({ notice, clear }) {
@@ -87,7 +89,7 @@ function AuthScreen({ onAuthenticated, setNotice }) {
             <button type="button" role="tab" aria-selected={!isRegister} className={!isRegister ? 'active' : ''} onClick={() => setMode('login')}>Sign in</button>
             <button type="button" role="tab" aria-selected={isRegister} className={isRegister ? 'active' : ''} onClick={() => setMode('register')}>Create account</button>
           </div>
-          <form onSubmit={submit} className="form-stack">
+          {mode === 'forgot' ? <PasswordReset onBack={() => setMode('login')} /> : <form onSubmit={submit} className="form-stack">
             {isRegister && <label>Full name
               <input autoComplete="name" minLength={2} maxLength={80} required value={form.name} onChange={change('name')} placeholder="e.g. Meghana B" />
             </label>}
@@ -111,7 +113,8 @@ function AuthScreen({ onAuthenticated, setNotice }) {
             <button className="primary full" type="submit" disabled={busy}>
               {busy ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'} <ArrowRight size={17} />
             </button>
-          </form>
+          </form>}
+          {mode === 'login' && <button type="button" className="text-link" onClick={() => setMode('forgot')}>Forgot password?</button>}
           <div className="auth-security"><ShieldCheck size={16} /><span>Passwords are hashed by the server. This page never stores your password.</span></div>
         </div>
         <div className="auth-footer">VEHICLE PARKING SYSTEM <span>·</span> SPRINT 1</div>
@@ -137,6 +140,7 @@ function Workspace({ session, onLogout, setNotice }) {
   const [slotCount, setSlotCount] = useState('10');
   const [slotPrefix, setSlotPrefix] = useState('A');
   const [gateForm, setGateForm] = useState({ reservationId: '', vehicleNumber: '' });
+  const [vehicleRegistration, setVehicleRegistration] = useState('');
   const [loadingLots, setLoadingLots] = useState(false);
   const visibleNav = NAV.filter((item) => item.roles.includes(role));
   const selected = lots.find((lot) => String(lot._id) === selectedLot);
@@ -207,7 +211,7 @@ function Workspace({ session, onLogout, setNotice }) {
     }
     setBusy(true);
     try {
-      const result = await api.reserve({ slotId: reserveSlot, startTime: new Date(windowStart).toISOString(), endTime: new Date(windowEnd).toISOString() });
+      const result = await api.reserve({ slotId: reserveSlot, vehicleRegistration: vehicleRegistration.trim().toUpperCase(), startTime: new Date(windowStart).toISOString(), endTime: new Date(windowEnd).toISOString() });
       setNotice({ type: 'success', text: 'Reservation confirmed. Reference: ' + (result.reservationId || (result.reservation && result.reservation._id) || 'created') });
       await loadSlots(selectedLot, { startTime: new Date(windowStart).toISOString(), endTime: new Date(windowEnd).toISOString() });
       await loadLots();
@@ -307,9 +311,11 @@ function Workspace({ session, onLogout, setNotice }) {
             <div className="section-heading"><div><span className="eyebrow">SELECTED LOCATION</span><h3>{selected.name} · Choose a slot</h3></div><button className="icon-button" aria-label="Close booking panel" onClick={() => { setSelectedLot(''); setReserveSlot(''); }}><XCircle size={17} /></button></div>
             <div className="slot-grid">{slots.map((slot) => <button key={slot._id} disabled={slot.status !== 'available'} aria-pressed={reserveSlot === slot._id} className={'slot-tile ' + slot.status + (reserveSlot === slot._id ? ' chosen' : '')} onClick={() => setReserveSlot(slot._id)}><span>{slot.slotNumber}</span><small>{slot.status}</small></button>)}</div>
             {slots.length === 0 && <p className="muted">No slots were returned for this lot.</p>}
-            <div className="booking-form"><label>Start time<input aria-label="Reservation start time" type="datetime-local" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} required /></label><label>End time<input aria-label="Reservation end time" type="datetime-local" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} required /></label><button className="primary" disabled={busy} onClick={reserve}>Reserve selected slot <ArrowRight size={16} /></button></div>
+            <div className="booking-form"><label>Vehicle registration<input aria-label="Vehicle registration" value={vehicleRegistration} onChange={(event) => setVehicleRegistration(event.target.value.toUpperCase())} required minLength={4} maxLength={15} placeholder="e.g. KA01AB1234" /></label><label>Start time<input aria-label="Reservation start time" type="datetime-local" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} required /></label><label>End time<input aria-label="Reservation end time" type="datetime-local" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} required /></label><button type="button" className="primary" onClick={reserve} disabled={busy || !vehicleRegistration.trim() || !reserveSlot}>Reserve selected slot <ArrowRight size={16} /></button></div>
           </section>}
         </section>}
+
+        {page === 'sprint2' && <section className="content"><div className="page-intro"><div><h2>More ways to manage parking.</h2><p>Reservations, payment, accessibility and administration tools.</p></div><div className="intro-icon"><Activity size={28}/></div></div><Sprint2Panel role={role} lots={lots} refreshLots={loadLots}/></section>}
 
         {page === 'gate' && <section className="content gate-content">
           <div className="page-intro"><div><h2>Gate kiosk</h2><p>Record vehicle arrival and departure against a reservation.</p></div><div className="intro-icon"><CarFront size={28} /></div></div>
@@ -327,7 +333,7 @@ function Workspace({ session, onLogout, setNotice }) {
           <form className="admin-card" onSubmit={createLot}><h3>Create a parking lot</h3><div className="form-row"><label>Lot name<input required minLength={2} value={lotForm.name} onChange={(event) => setLotForm({ ...lotForm, name: event.target.value })} placeholder="Central Parking" /></label><label>City<input required minLength={2} value={lotForm.city} onChange={(event) => setLotForm({ ...lotForm, city: event.target.value })} placeholder="Bengaluru" /></label></div><label>Address<input required minLength={3} value={lotForm.address} onChange={(event) => setLotForm({ ...lotForm, address: event.target.value })} placeholder="Street and area" /></label><button className="primary" disabled={busy}>Create lot <ArrowRight size={16} /></button></form>
           <form className="admin-card" onSubmit={bulkSlots}><h3>Bulk-create slots</h3><label>Target lot<select value={selectedLot} onChange={(event) => setSelectedLot(event.target.value)} required><option value="">Choose a lot</option>{lots.map((lot) => <option key={lot._id} value={lot._id}>{lot.name}</option>)}</select></label><div className="form-row"><label>Prefix<input value={slotPrefix} onChange={(event) => setSlotPrefix(event.target.value)} maxLength={10} required /></label><label>Number of slots<input type="number" min="1" max="500" value={slotCount} onChange={(event) => setSlotCount(event.target.value)} required /></label></div><button className="primary" disabled={busy || !selectedLot}>Create slots <ArrowRight size={16} /></button></form>
         </section>}
-        <footer className="page-footer"><span><ShieldCheck size={15} /> Role-based navigation enabled</span><span>VPS · Sprint 1</span></footer>
+        <footer className="page-footer"><span><ShieldCheck size={15} /> Role-based navigation enabled</span><span>VPS · Sprint 2</span></footer>
       </main>
     </div>
   );
