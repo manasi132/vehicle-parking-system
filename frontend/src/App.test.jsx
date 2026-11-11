@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from './App.jsx';
 
 const jsonResponse = (status, payload) => ({
@@ -130,6 +130,26 @@ describe('Vehicle Parking System frontend', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/exit recorded/i));
     expect(fetchMock).toHaveBeenCalledWith('/api/tracking/exit', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer attendant-token' }),
+    }));
+  });
+
+  it('sends the payment token and session to the charge endpoint and displays its receipt', async () => {
+    window.localStorage.setItem('vps.token', 'driver-token');
+    window.localStorage.setItem('vps.user', JSON.stringify({ name: 'Driver', role: 'driver' }));
+    const fetchMock = vi.fn(async url => String(url).endsWith('/api/payments/charge')
+      ? jsonResponse(200, { status: 'success', receiptId: 'pi_test', balanceDue: 0 })
+      : jsonResponse(200, { lots: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /more features/i }));
+    const panel = within(screen.getByRole('heading', { name: /payment and receipt/i }).closest('section'));
+    fireEvent.change(panel.getByLabelText(/reservation reference/i), { target: { value: 'reservation-123' } });
+    fireEvent.change(panel.getByLabelText(/sandbox payment token/i), { target: { value: 'tok_test' } });
+    fireEvent.click(panel.getByRole('button', { name: /pay securely/i }));
+    await waitFor(() => expect(panel.getByText(/receipt: pi_test/i)).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith('/api/payments/charge', expect.objectContaining({
+      method: 'POST', headers: expect.objectContaining({ Authorization: 'Bearer driver-token' }),
+      body: JSON.stringify({ reservationId: 'reservation-123', paymentToken: 'tok_test' })
     }));
   });
 

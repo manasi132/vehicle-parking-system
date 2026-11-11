@@ -4,7 +4,7 @@ Use Node.js 24 LTS (CI); the modules require Node.js 20+. Run `npm ci` then `npm
 
 ## Fee calculation (VPS-F-030)
 
-`src/payment/fee.js` accepts trusted `startTime`, `endTime`, `hourlyRateMinor`, and optional `peak: { startHour, endHour, multiplierBps }` from reservation/lot data. Use actual recorded entry/exit timestamps when the tracking component is connected. Never accept pricing from the payment request.
+`src/payment/fee-core.cjs` is the shared fee engine used by the ESM payment module and the backend lot estimate. Payment uses the reservation's recorded entry/exit timestamps and saved lot pricing. Never accept pricing from the payment request.
 
 - Bill elapsed milliseconds pro rata: no started-hour ceiling or minimum duration. Reject zero/negative durations and nonpositive/noninteger rates. Very small positive stays may round to zero; the payment endpoint rejects a zero charge.
 - Supply timestamps with explicit `Z`/UTC offsets, or Date/epoch values. JavaScript's existing parsing behavior is preserved; zone-less timestamps are outside the integration contract because their interpretation can depend on the host timezone.
@@ -14,13 +14,13 @@ Use Node.js 24 LTS (CI); the modules require Node.js 20+. Run `npm ci` then `npm
 
 ## API and integration dependencies (VPS-F-031 / VPS-SR-004)
 
-`src/api.js` exports a mountable Node HTTP request handler. Construct it with `authenticate(req)` (returns `{ id }` for a verified session, or null) and the function from `createChargeService`. Mount behind the TLS proxy; bind the host application to `127.0.0.1:3000`. There is no runnable host application, JWT verifier, database, reservation model or recorded-stay integration on this branch or current `main`. **Connecting and testing these real components is still blocked on the team's integration.** Tests inject explicit fixtures; presence of an Authorization header alone is not production authentication.
+The Express application mounts `backend/src/routes/paymentRoutes.js` at `/api/payments` using the existing JWT middleware. Set `STRIPE_SECRET_KEY` to a Stripe **test-mode** key outside the repository and optionally set `PAYMENT_CURRENCY` (lowercase ISO code; default `inr`). Bind the backend to the private upstream configured in the TLS proxy. Only the reservation owner can pay, and only after the stay is completed with recorded entry and exit. The lot's saved rate and peak rule are frozen when payment is first attempted; changes thereafter do not reprice a retry. Rates must have at most two decimal places and peak multipliers at most four. Estimates and charges share the same fee engine.
 
-`POST /api/payments/charge` accepts only `{ "reservationId": "...", "paymentToken": "tok_..." }`. It returns 200 with `receiptId` (Stripe PaymentIntent ID) and `balanceDue: 0`, 401 if unauthenticated, 404 for missing/foreign-owned reservations, 402 for a declined/unsupported-action payment, 400 for invalid input/zero amount, 413 for oversized bodies, 503 for unavailable/misconfigured providers, and generic 500 for persistence/internal errors. All responses are `Cache-Control: no-store`. Provider errors, card data and tokens are never echoed or logged by these modules.
+`POST /api/payments/charge` accepts only `{ "reservationId": "...", "paymentToken": "tok_..." }`. It returns 200 with `receiptId` (Stripe PaymentIntent ID) and `balanceDue: 0`, 401 if unauthenticated, 404 for missing/foreign-owned reservations, 402 for a declined/unsupported-action payment, 409 for incomplete stays or invalid lot pricing, 400 for invalid input/zero amount, 413 for oversized bodies, 503 for unavailable/misconfigured providers, and generic 500 for persistence/internal errors. Payment responses are `Cache-Control: no-store`. Provider errors, card data and tokens are never echoed or logged by these modules.
 
 ### Reservation persistence contract
 
-The store must provide the following async methods (required at construction; no unsafe in-memory production fallback):
+`backend/src/services/paymentStore.js` implements this contract using one `Payment` document per canonical reservation ID, a renewable MongoDB lease with owner-fenced writes, and majority-acknowledged payment state. The price/timing snapshot is written before Stripe is contacted. A unique index on payment transaction IDs is created at server startup; the database account needs index-creation permission. Idempotency at Stripe protects the external side effect if a worker loses its lease during an external call. The adapter requires the following async methods:
 
 | Method | Required semantics |
 | --- | --- |
@@ -39,7 +39,7 @@ The adapter now uses supported [PaymentIntents](https://docs.stripe.com/api/paym
 
 All provider calls use fixed `https://api.stripe.com` URLs, platform certificate verification and TLS defaults (TLS 1.2+ on supported Node releases), reject redirects, and have 10-second per-request timeouts. Network failures, 429s and 5xx responses retry at most three attempts, with 100/200 ms exponential backoff. Creation uses a reservation-scoped hashed idempotency key; confirmation uses an intent-scoped token fingerprint key, never the token itself in headers or storage. Different-token retries reuse the same persisted intent. Declines return 402, whereas transport/configuration failures return 503. A pending/processing intent cannot be replaced with a new charge. Stripe responses are reduced to allowlisted fields; no provider object, client secret, card details or payment token is persisted or logged.
 
-**Live sandbox verification remains pending:** requires a test account/key, actual client-generated token, host API and durable store. Do not interpret mocked test success as Stripe verification. Run a successful test payment, decline, and same-reservation retry; verify exactly one successful intent and the allowlisted stored fields. Keep keys/tokens/request bodies out of logs, screenshots and commits. The gateway may enforce account-specific currency/minimum-amount constraints; live validation is required.
+**Live sandbox verification remains pending:** requires a test account/key and actual client-generated token. Do not interpret mocked test success as Stripe verification. Run a successful test payment, decline, and same-reservation retry; verify exactly one successful intent and the allowlisted stored fields. Keep keys/tokens/request bodies out of logs, screenshots and commits. The gateway may enforce account-specific currency/minimum-amount constraints; live validation is required. The current UI accepts a provider token and displays a reference; client-side token creation, a printable receipt and refunds are separate outstanding features.
 
 ## HTTPS/TLS (VPS-SR-001)
 

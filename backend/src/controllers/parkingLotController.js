@@ -231,7 +231,7 @@ async function estimateParkingFee(req, res) {
   }
   let amount;
   try {
-    amount = calculateParkingFee(startTime, endTime, lot.hourlyRate, lot.peakPricing || {});
+    amount = await calculateParkingFee(startTime, endTime, lot.hourlyRate, lot.peakPricing || {});
   } catch (error) {
     return res.status(400).json({ message: error.message });
   }

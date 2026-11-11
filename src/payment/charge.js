@@ -17,20 +17,23 @@ export function createChargeService({ reservationStore, gateway }) {
     }
     try {
       return await reservationStore.withPaymentLock(reservationId, async () => {
-        const reservation = await reservationStore.findById(reservationId);
+        const reservation = await reservationStore.findById(reservationId, userId);
         if (!reservation || reservation.userId !== userId) return error(404, 'NOT_FOUND', 'Reservation not found.');
         if (reservation.payment) return success(reservation.payment);
+        if (reservation.paymentError) return error(409, 'NOT_PAYABLE', reservation.paymentError);
         let intent = reservation.paymentIntent;
         if (!intent) {
           const amountMinor = calculateFee(reservation);
           if (amountMinor < 1) return error(400, 'INVALID_AMOUNT', 'The amount due must be positive.');
           if (!/^[a-z]{3}$/.test(reservation.currency)) throw new Error('Invalid reservation currency');
           const idempotencyKey = `parking:${createHash('sha256').update(reservationId).digest('hex')}`;
+          await reservationStore.assertPaymentLock?.(reservationId);
           const created = await gateway.createIntent({ amountMinor, currency: reservation.currency, idempotencyKey });
           intent = { id: created.id, amountMinor, currency: reservation.currency };
           // Persist BEFORE confirmation: retries after crashes always retrieve the same intent.
           await reservationStore.recordPaymentIntent(reservationId, intent);
         }
+        await reservationStore.assertPaymentLock?.(reservationId);
         const result = await gateway.charge({ ...intent, paymentToken });
         if (!result.success) return error(402, 'PAYMENT_FAILED', 'Payment failed.');
         if (typeof result.transactionId !== 'string' || !result.transactionId) throw new Error('Invalid gateway result');
