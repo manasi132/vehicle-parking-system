@@ -105,7 +105,7 @@ async function listAuditLogs(req, res) {
     }
   }
   const logs = await AuditLog.find({})
-    .sort({ occurredAt: -1 })
+    .sort({ occurredAt: -1, _id: -1 })
     .limit(limit)
     .populate('actor', 'name email role')
     .lean();
