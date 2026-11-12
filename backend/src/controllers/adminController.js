@@ -96,7 +96,7 @@ async function listAuditLogs(req, res) {
   let limit = 50;
   if (rawLimit !== undefined) {
     const value = String(rawLimit);
-    if (!/^\\d+$/.test(value)) {
+    if (!/^\d+$/.test(value)) {
       return res.status(400).json({ message: 'limit must be an integer from 1 to 100.' });
     }
     limit = Number(value);
