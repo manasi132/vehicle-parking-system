@@ -19,6 +19,7 @@ const { sendPasswordResetOtp } = require('../src/services/passwordResetDelivery'
 
 let mongo;
 const TEST_PASSWORD = 'Manasi!Sprint2Pass123';
+const originalFetch = global.fetch;
 
 beforeAll(async () => {
   if (process.env.MONGODB_TEST_URI) {
@@ -50,6 +51,7 @@ afterEach(async () => {
     ]);
   }
   delete global.passwordResetOtpDelivery;
+  global.fetch = originalFetch;
   delete process.env.PASSWORD_RESET_DELIVERY_URL;
   delete process.env.PASSWORD_RESET_DELIVERY_TOKEN;
   process.env.NODE_ENV = 'test';
@@ -142,9 +144,8 @@ describe('Manasi Sprint 2 acceptance coverage', () => {
     expect(sent.status).toBe(200);
     expect(sent.body).not.toHaveProperty('otp');
     expect(deliveredOtp).toMatch(/^\d{6}$/);
-    expect(global.passwordResetOtpDelivery).toHaveBeenCalledWith(expect.objectContaining({
-      user: expect.objectContaining({ _id: user._id })
-    }));
+    expect(global.passwordResetOtpDelivery).toHaveBeenCalledTimes(1);
+    expect(String(global.passwordResetOtpDelivery.mock.calls[0][0].user._id)).toBe(String(user._id));
 
     const reset = await request(app).post('/api/auth/password/reset').send({
       identifier: phone,
@@ -361,7 +362,7 @@ describe('Manasi Sprint 2 acceptance coverage', () => {
       .set('Authorization', 'Bearer ' + token);
     expect(deactivated.status).toBe(200);
 
-    const logs = await AuditLog.find({}).sort({ occurredAt: 1 }).lean();
+    const logs = await AuditLog.find({}).sort({ occurredAt: 1, _id: 1 }).lean();
     expect(logs.map(log => log.action)).toEqual([
       'lot.create',
       'lot.update',
