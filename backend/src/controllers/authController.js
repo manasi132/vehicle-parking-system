@@ -18,6 +18,13 @@ function hashOtp(value) {
   return crypto.createHmac('sha256', process.env.JWT_SECRET).update(String(value)).digest('hex');
 }
 
+function otpHashMatches(storedHash, candidateOtp) {
+  if (typeof storedHash !== 'string' || !/^[a-f0-9]{64}$/i.test(storedHash)) return false;
+  const stored = Buffer.from(storedHash, 'hex');
+  const candidate = Buffer.from(hashOtp(candidateOtp), 'hex');
+  return stored.length === candidate.length && crypto.timingSafeEqual(stored, candidate);
+}
+
 async function register(req, res) {
   const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
   const email = normalizeEmail(req.body.email);
@@ -97,9 +104,13 @@ async function requestPasswordReset(req, res) {
     await user.save();
     try {
       await sendPasswordResetOtp({ user, otp });
-    } catch (error) {
-      // Preserve the same public response for known and unknown accounts.
-      console.error('Password reset delivery failed:', error.message);
+    } catch (_error) {
+      // Do not retain a code that could not be delivered. Keep the public response
+      // identical for known and unknown accounts and never log the OTP/provider error.
+      user.passwordResetOtpHash = null;
+      user.passwordResetOtpExpiresAt = null;
+      await user.save();
+      console.error('Password reset delivery failed. Check the configured delivery provider.');
     }
   }
   return res.status(200).json({ message: 'If the account exists, a password reset code has been sent. The code is valid for 10 minutes.' });
@@ -118,7 +129,7 @@ async function confirmPasswordReset(req, res) {
   const user = await User.findOne(query).select('+passwordResetOtpHash +passwordResetOtpExpiresAt');
   if (!user || !user.passwordResetOtpHash || !user.passwordResetOtpExpiresAt ||
       user.passwordResetOtpExpiresAt <= new Date() ||
-      !crypto.timingSafeEqual(Buffer.from(user.passwordResetOtpHash), Buffer.from(hashOtp(otp)))) {
+      !otpHashMatches(user.passwordResetOtpHash, otp)) {
     return res.status(400).json({ message: 'The reset code is invalid or expired.' });
   }
   user.passwordHash = await bcrypt.hash(newPassword, 12);
