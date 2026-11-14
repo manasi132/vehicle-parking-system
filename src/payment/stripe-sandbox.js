@@ -14,7 +14,7 @@ export function createStripeSandbox(secretKey, fetchImpl = fetch, sleep = delay)
           method: params ? 'POST' : 'GET',
           redirect: 'error',
           signal: AbortSignal.timeout(10000),
-          headers: { Authorization: `Bearer ${secretKey}`, ...(params ? { 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': key } : {}) },
+          headers: { Authorization: `Bearer ${secretKey}`, 'Stripe-Version': '2024-06-20', ...(params ? { 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': key } : {}) },
           ...(params ? { body: new URLSearchParams(params) } : {})
         });
         if (response.status === 429 || response.status >= 500) throw unavailable();

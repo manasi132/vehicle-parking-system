@@ -145,8 +145,8 @@ function Workspace({ session, onLogout, setNotice }) {
   const visibleNav = NAV.filter((item) => item.roles.includes(role));
   const selected = lots.find((lot) => String(lot._id) === selectedLot);
 
-  async function loadLots() {
-    setLoadingLots(true);
+  async function loadLots({ silent = false } = {}) {
+    if (!silent) setLoadingLots(true);
     try {
       const response = await api.lots();
       const items = Array.isArray(response) ? response : (response.lots || response.items || []);
@@ -161,9 +161,9 @@ function Workspace({ session, onLogout, setNotice }) {
       }));
       setLots(withCounts);
     } catch (error) {
-      setNotice({ type: 'error', text: error.message });
+      if (!silent) setNotice({ type: 'error', text: error.message });
     } finally {
-      setLoadingLots(false);
+      if (!silent) setLoadingLots(false);
     }
   }
 
@@ -179,14 +179,43 @@ function Workspace({ session, onLogout, setNotice }) {
     }
   }
 
-  useEffect(() => { loadLots(); }, []);
+  useEffect(() => {
+    loadLots();
+    const timer = window.setInterval(() => loadLots({ silent: true }), 3000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     if (!selectedLot) { setSlots([]); return; }
     const start = windowStart ? new Date(windowStart) : null;
     const end = windowEnd ? new Date(windowEnd) : null;
     const validWindow = start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start;
+    if ((windowStart || windowEnd) && !validWindow) { setSlots([]); return; }
     const range = validWindow ? { startTime: start.toISOString(), endTime: end.toISOString() } : {};
-    loadSlots(selectedLot, range);
+    setSlots([]);
+    let active = true;
+    let sequence = 0;
+    let applied = 0;
+    async function refreshSlots() {
+      const request = ++sequence;
+      try {
+        const result = await api.lotSlots(selectedLot, range);
+        if (active && request > applied) {
+          applied = request;
+          const updatedSlots = Array.isArray(result) ? result : (result.slots || result.items || []);
+          setSlots(updatedSlots);
+          setReserveSlot(current => current && updatedSlots.some(slot => slot._id === current && slot.status === 'available') ? current : '');
+        }
+      } catch (error) {
+        if (active && request > applied) {
+          applied = request;
+          setSlots([]);
+          setNotice({ type: 'error', text: error.message });
+        }
+      }
+    }
+    refreshSlots();
+    const timer = window.setInterval(refreshSlots, 3000);
+    return () => { active = false; window.clearInterval(timer); };
   }, [selectedLot, windowStart, windowEnd]);
 
   const visibleLots = useMemo(() => {
@@ -311,7 +340,7 @@ function Workspace({ session, onLogout, setNotice }) {
             <div className="section-heading"><div><span className="eyebrow">SELECTED LOCATION</span><h3>{selected.name} · Choose a slot</h3></div><button className="icon-button" aria-label="Close booking panel" onClick={() => { setSelectedLot(''); setReserveSlot(''); }}><XCircle size={17} /></button></div>
             <div className="slot-grid">{slots.map((slot) => <button key={slot._id} disabled={slot.status !== 'available'} aria-pressed={reserveSlot === slot._id} className={'slot-tile ' + slot.status + (reserveSlot === slot._id ? ' chosen' : '')} onClick={() => setReserveSlot(slot._id)}><span>{slot.slotNumber}</span><small>{slot.status}</small></button>)}</div>
             {slots.length === 0 && <p className="muted">No slots were returned for this lot.</p>}
-            <div className="booking-form"><label>Vehicle registration<input aria-label="Vehicle registration" value={vehicleRegistration} onChange={(event) => setVehicleRegistration(event.target.value.toUpperCase())} required minLength={4} maxLength={15} placeholder="e.g. KA01AB1234" /></label><label>Start time<input aria-label="Reservation start time" type="datetime-local" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} required /></label><label>End time<input aria-label="Reservation end time" type="datetime-local" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} required /></label><button type="button" className="primary" onClick={reserve} disabled={busy || !vehicleRegistration.trim() || !reserveSlot}>Reserve selected slot <ArrowRight size={16} /></button></div>
+            <div className="booking-form"><label>Vehicle registration<input aria-label="Vehicle registration" value={vehicleRegistration} onChange={(event) => setVehicleRegistration(event.target.value.toUpperCase())} required minLength={4} maxLength={15} placeholder="e.g. KA01AB1234" /></label><label>Start time<input aria-label="Reservation start time" type="datetime-local" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} required /></label><label>End time<input aria-label="Reservation end time" type="datetime-local" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} required /></label><button type="button" className="primary" onClick={reserve} disabled={busy || !vehicleRegistration.trim() || !slots.some(slot => slot._id === reserveSlot && slot.status === 'available')}>Reserve selected slot <ArrowRight size={16} /></button></div>
           </section>}
         </section>}
 
