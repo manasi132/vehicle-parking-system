@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
+import SandboxCard from './SandboxCard.jsx';
 import { Activity, CreditCard, Users, ScrollText, IndianRupee, RefreshCw, XCircle, CheckCircle2 } from 'lucide-react';
 
 function Panel({ title, description, children, action }) {
@@ -34,6 +35,9 @@ export function PasswordReset({ onBack }) {
 export default function Sprint2Panel({ role, lots = [], refreshLots }) {
   const [reservId, setReservId] = useState(''), [vehicle, setVehicle] = useState('');
   const [paymentToken, setPaymentToken] = useState('tok_visa'), [receipt, setReceipt] = useState(null);
+  const publishableKey = (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '').trim();
+  const cardRef = useRef(null);
+  const [cardReady, setCardReady] = useState(false);
   const [occupancy, setOccupancy] = useState([]), [attendants, setAttendants] = useState([]), [logs, setLogs] = useState([]);
   const [lotId, setLotId] = useState(lots[0]?._id || ''), [rate, setRate] = useState('30');
   const [peak, setPeak] = useState(false), [startHour, setStartHour] = useState('17'), [endHour, setEndHour] = useState('21'), [multiplier, setMultiplier] = useState('1.5');
@@ -52,11 +56,11 @@ export default function Sprint2Panel({ role, lots = [], refreshLots }) {
         <Message value={action.message}/><button className="secondary" disabled={action.busy}>Cancel reservation</button>
       </form>
     </Panel>
-    <Panel title="Payment and receipt" description="Complete a sandbox payment for a reservation. Use a test-mode token supplied by the payment provider.">
-      <form className="s2-form" onSubmit={async e => { e.preventDefault(); const r = await action.run(() => api.charge({ reservationId: reservId, paymentToken }), 'Payment processed.'); if (r) setReceipt(r); }}>
+    <Panel title="Payment and receipt" description="Complete a test-mode payment for a completed reservation.">
+      <form className="s2-form" onSubmit={async e => { e.preventDefault(); const r = await action.run(async () => api.charge({ reservationId: reservId, paymentToken: publishableKey ? await cardRef.current.createToken() : paymentToken }), 'Payment processed.'); if (r) { setReceipt(r); cardRef.current?.clear(); } }}>
         <label>Reservation reference<input value={reservId} onChange={e => setReservId(e.target.value)} required /></label>
-        <label>Sandbox payment token<input value={paymentToken} onChange={e => setPaymentToken(e.target.value)} required /></label>
-        <Message value={action.message}/><button className="primary" disabled={action.busy}><CreditCard size={16}/> Pay securely</button>
+        {publishableKey ? <SandboxCard ref={cardRef} publishableKey={publishableKey} onReady={setCardReady} /> : <label>Sandbox payment token<input value={paymentToken} onChange={e => setPaymentToken(e.target.value)} required /></label>}
+        <Message value={action.message}/><button className="primary" disabled={action.busy || (Boolean(publishableKey) && !cardReady)}><CreditCard size={16}/> Pay securely</button>
       </form>
       {receipt && <div className="s2-receipt"><CheckCircle2 size={18}/><div><strong>Payment receipt</strong><span>Receipt: {receipt.receiptId || 'Confirmed'} · Balance due: {receipt.balanceDue ?? 0}</span></div></div>}
     </Panel>

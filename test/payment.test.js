@@ -124,7 +124,7 @@ test('PaymentIntents sandbox creates without token then retrieves/confirms secur
   assert.equal(requests[1].method, 'GET');
   assert.equal(requests[2].body.get('payment_method_data[card][token]'), 'tok_visa');
   assert.equal(requests[2].body.get('error_on_requires_action'), 'true');
-  for (const req of requests) { assert.equal(req.redirect, 'error'); assert.ok(req.signal); assert.match(req.url, /^https:\/\/api\.stripe\.com\//); }
+  for (const req of requests) { assert.equal(req.redirect, 'error'); assert.ok(req.signal); assert.match(req.url, /^https:\/\/api\.stripe\.com\//); assert.equal(req.headers['Stripe-Version'], '2024-06-20'); }
   assert.doesNotMatch(requests[2].headers['Idempotency-Key'], /tok_visa/);
 });
 

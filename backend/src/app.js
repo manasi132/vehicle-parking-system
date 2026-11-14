@@ -6,6 +6,7 @@ const lotRoutes = require('./routes/lotRoutes');
 const slotRoutes = require('./routes/slotRoutes');
 const trackingRoutes = require('./routes/trackingRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 
 const app = express();
 const configuredOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173,http://localhost:3000')
@@ -38,6 +39,7 @@ app.use('/api/lots', lotRoutes);
 app.use('/api/slots', slotRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/payments', paymentRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ message: 'Endpoint not found.' });

@@ -18,6 +18,18 @@ From this directory:
 
 Never commit .env. Do not store raw payment card data in this service.
 
+## Disposable Stripe test-mode sandbox
+
+Keep credentials in ignored local files; never put them in `.env.example`. If a secret was exposed in a tracked file or log, rotate it in Stripe first. In `backend/.env`, set `STRIPE_SECRET_KEY` to the rotated `sk_test_...` key, `JWT_SECRET` to a random value of at least 32 characters, `PAYMENT_CURRENCY` to the test account's supported currency (default `inr`), and `PORT=5000`. Optionally set `SANDBOX_ADMIN_PASSWORD` to a strong local-only password; the launcher then creates `admin@sandbox.invalid` with that password. Create an attendant through the admin UI/API and register a driver normally. These credentials and all data are discarded when the launcher stops.
+
+Run `npm ci`, then `node scripts/sandbox-local.cjs` from `backend`. It starts its own `mongodb-memory-server` instance and binds the API to loopback, ignoring `MONGODB_URI`; it never connects to a shared database. First use may require a MongoDB binary download. Stop with Ctrl+C. In ignored `frontend/.env.local`, set `VITE_API_BASE_URL=http://localhost:5000` and `VITE_STRIPE_PUBLISHABLE_KEY` to the corresponding `pk_test_...` key; run `npm ci` and `npm run dev` in `frontend`. Set `CLIENT_ORIGIN` in `backend/.env` to the exact Vite origin. Do not put the secret key in any `VITE_` variable.
+
+To exercise the real provider without sending raw card data to this server, run `node scripts/verify-stripe-sandbox.cjs` from `backend`. It creates its own disposable database, sends Stripe's test tokens through the real API/payment adapter, and compares successful and declined/retried PaymentIntents to persisted MongoDB records. It prints only test PaymentIntent IDs, amounts, currencies and statuses for comparison in the Stripe **test** Dashboard; it never prints credentials or tokens. The script creates sandbox objects in your Stripe test account but cannot verify the Dashboard UI. Test-account restrictions, network availability and supported currency may affect results.
+
+Stripe API requests are pinned to version `2024-06-20`, which supports the existing card-only PaymentIntent request and token confirmation contract. Changing that version requires retesting against Stripe; newer account defaults may reject the `payment_method_types` parameter.
+
+For Manasi's later shared-backend integration, configure `MONGODB_URI`, a unique `JWT_SECRET`, `STRIPE_SECRET_KEY` (test key for test environments), `PAYMENT_CURRENCY`, `PORT`, and `CLIENT_ORIGIN` in the backend's secret manager; configure `VITE_API_BASE_URL` and `VITE_STRIPE_PUBLISHABLE_KEY` at frontend build time. The shared MongoDB account must be able to create the payment transaction index. Do not use this disposable launcher for shared data. The synchronous payment flow rejects cards requiring additional authentication; 3DS/SCA, webhooks, durable receipt documents and refunds require separate integration work.
+
 ## Manavi — Sprint 1 booking and tracking
 
 - VPS-F-010: GET /api/lots/:lotId/availability and GET /api/lots/:lotId/slots return slot status and availability counts calculated from current slot status plus overlapping confirmed reservations. Availability is computed on each request; no cached counts are used.

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from './App.jsx';
+import { API_BASE_URL } from './api.js';
 
 const jsonResponse = (status, payload) => ({
   ok: status >= 200 && status < 300,
@@ -14,6 +15,8 @@ afterEach(() => {
   window.localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 describe('Vehicle Parking System frontend', () => {
@@ -88,6 +91,26 @@ describe('Vehicle Parking System frontend', () => {
     expect(screen.getByLabelText(/vehicle registration number/i)).toBeInTheDocument();
   });
 
+  it('refreshes availability within five seconds and clears a selection that becomes unavailable', async () => {
+    window.localStorage.setItem('vps.token', 'test-token');
+    window.localStorage.setItem('vps.user', JSON.stringify({ name: 'Driver', role: 'driver' }));
+    let status = 'available';
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (String(url).includes('/api/lots/lot-1/slots')) return jsonResponse(200, { slots: [{ _id: 'slot-1', slotNumber: 'A-001', status }] });
+      if (String(url).endsWith('/api/lots')) return jsonResponse(200, { lots: [{ _id: 'lot-1', name: 'Central Parking', address: '1 Main Road', city: 'Bengaluru' }] });
+      return jsonResponse(404, {});
+    }));
+    render(<App />);
+    await screen.findByRole('button', { name: /view slots/i });
+    fireEvent.click(screen.getByRole('button', { name: /view slots/i }));
+    const slot = await screen.findByRole('button', { name: /a-001/i });
+    fireEvent.click(slot);
+    expect(slot).toHaveAttribute('aria-pressed', 'true');
+    status = 'reserved';
+    await waitFor(() => expect(screen.getByRole('button', { name: /a-001/i })).toBeDisabled(), { timeout: 4500 });
+    expect(screen.getByRole('button', { name: /a-001/i })).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('stores the returned session token and opens role-aware navigation after login', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, {
       token: 'signed-test-token',
@@ -120,7 +143,7 @@ describe('Vehicle Parking System frontend', () => {
     fireEvent.change(screen.getByLabelText(/vehicle registration number/i), { target: { value: 'KA01AB1234' } });
     fireEvent.click(screen.getByRole('button', { name: /record entry/i }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/entry recorded/i));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/tracking/entry', expect.objectContaining({
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(API_BASE_URL + '/api/tracking/entry', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer attendant-token' }),
     })));
     await waitFor(() => expect(screen.getByRole('button', { name: /record exit/i })).toBeEnabled());
@@ -128,8 +151,29 @@ describe('Vehicle Parking System frontend', () => {
     fireEvent.change(screen.getByLabelText(/vehicle registration number/i), { target: { value: 'KA01AB1234' } });
     fireEvent.click(screen.getByRole('button', { name: /record exit/i }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/exit recorded/i));
-    expect(fetchMock).toHaveBeenCalledWith('/api/tracking/exit', expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith(API_BASE_URL + '/api/tracking/exit', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer attendant-token' }),
+    }));
+  });
+
+  it('sends the payment token and session to the charge endpoint and displays its receipt', async () => {
+    vi.stubEnv('VITE_STRIPE_PUBLISHABLE_KEY', '');
+    window.localStorage.setItem('vps.token', 'driver-token');
+    window.localStorage.setItem('vps.user', JSON.stringify({ name: 'Driver', role: 'driver' }));
+    const fetchMock = vi.fn(async url => String(url).endsWith('/api/payments/charge')
+      ? jsonResponse(200, { status: 'success', receiptId: 'pi_test', balanceDue: 0 })
+      : jsonResponse(200, { lots: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /more features/i }));
+    const panel = within(screen.getByRole('heading', { name: /payment and receipt/i }).closest('section'));
+    fireEvent.change(panel.getByLabelText(/reservation reference/i), { target: { value: 'reservation-123' } });
+    fireEvent.change(panel.getByLabelText(/sandbox payment token/i), { target: { value: 'tok_test' } });
+    fireEvent.click(panel.getByRole('button', { name: /pay securely/i }));
+    await waitFor(() => expect(panel.getByText(/receipt: pi_test/i)).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith(API_BASE_URL + '/api/payments/charge', expect.objectContaining({
+      method: 'POST', headers: expect.objectContaining({ Authorization: 'Bearer driver-token' }),
+      body: JSON.stringify({ reservationId: 'reservation-123', paymentToken: 'tok_test' })
     }));
   });
 
