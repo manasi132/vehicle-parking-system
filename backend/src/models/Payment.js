@@ -8,7 +8,9 @@ const schema = new mongoose.Schema({
   snapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   intent: { type: mongoose.Schema.Types.Mixed, default: null },
   payment: { type: mongoose.Schema.Types.Mixed, default: null },
-  refund: { type: mongoose.Schema.Types.Mixed, default: null }
+  refund: { type: mongoose.Schema.Types.Mixed, default: null },
+  // Durable marker reconciled into the notification outbox after payment writes.
+  pendingNotifications: { type: [String], default: [] }
 }, { timestamps: true, versionKey: false, writeConcern: { w: 'majority' } });
 schema.index({ 'payment.transactionId': 1 }, { unique: true, partialFilterExpression: { 'payment.transactionId': { $type: 'string' } } });
 schema.index({ 'refund.refundId': 1 }, { unique: true, partialFilterExpression: { 'refund.refundId': { $type: 'string' } } });
