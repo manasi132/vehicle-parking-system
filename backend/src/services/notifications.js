@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const Notification = require('../models/Notification');
 const Reservation = require('../models/Reservation');
+const Payment = require('../models/Payment');
 const LEASE_MS = 30000;
 
 // Development delivery adapter shared by reservation events and OTP. Do not log contact details.
@@ -56,15 +57,64 @@ async function dispatchNotification(id) {
   }
 }
 
-async function notifyReservation(type, reservation) {
+async function notifyReservation(type, reservation, options = {}) {
   const reservationId = String(reservation._id), id = `${type}:${reservationId}`;
+  const session = options.session;
   try {
-    await Notification.updateOne({ _id: id }, { $setOnInsert: { type, userId: String(reservation.user), reservationId, state: 'pending', nextAttemptAt: new Date() } }, { upsert: true });
-    // Production delivery is handled in bounded worker batches. Tests dispatch
-    // promptly so callers can exercise the retry and idempotency behavior.
-    if (process.env.NODE_ENV === 'test') setImmediate(() => dispatchNotification(id).catch(() => console.error('Notification dispatch failed.')));
+    await Notification.updateOne({ _id: id }, { $setOnInsert: { type, userId: String(reservation.user), reservationId, state: 'pending', nextAttemptAt: new Date() } }, { upsert: true, ...(session ? { session } : {}) });
+    // A transactional enqueue must not dispatch until the enclosing transaction
+    // commits. The caller wakes the test dispatcher after commit; production
+    // workers discover the durable pending record by polling.
+    if (process.env.NODE_ENV === 'test' && !session) setImmediate(() => dispatchNotification(id).catch(() => console.error('Notification dispatch failed.')));
     return true;
-  } catch { console.error('Notification enqueue failed.'); return false; }
+  } catch (error) {
+    if (session) throw error;
+    console.error('Notification enqueue failed.');
+    return false;
+  }
+}
+
+async function reconcilePaymentNotifications(limit = 50) {
+  const payments = await Payment.find({ pendingNotifications: 'PAYMENT' })
+    .select('_id')
+    .sort({ updatedAt: 1, _id: 1 })
+    .limit(limit)
+    .lean();
+  if (!payments.length) return;
+
+  const reservationIds = payments.map(payment => String(payment._id));
+  const reservations = await Reservation.find({ _id: { $in: reservationIds } })
+    .select('_id user')
+    .lean();
+  if (!reservations.length) return;
+
+  const now = new Date();
+  await Notification.bulkWrite(reservations.map(reservation => ({
+    updateOne: {
+      filter: { _id: `PAYMENT:${reservation._id}` },
+      update: { $setOnInsert: {
+        type: 'PAYMENT',
+        userId: String(reservation.user),
+        reservationId: String(reservation._id),
+        state: 'pending',
+        nextAttemptAt: now
+      } },
+      upsert: true
+    }
+  })), { ordered: false, writeConcern: { w: 'majority' } });
+
+  // If a process stops between this marker removal and delivery, the durable
+  // Notification record remains pending and the ordinary worker retries it.
+  await Payment.updateMany(
+    { _id: { $in: reservations.map(reservation => String(reservation._id)) }, pendingNotifications: 'PAYMENT' },
+    { $pull: { pendingNotifications: 'PAYMENT' } }
+  );
+
+  if (process.env.NODE_ENV === 'test') {
+    for (const reservation of reservations) {
+      setImmediate(() => dispatchNotification(`PAYMENT:${reservation._id}`).catch(() => console.error('Notification dispatch failed.')));
+    }
+  }
 }
 
 async function reconcileBookingNotifications(limit = 50) {
@@ -98,9 +148,9 @@ function startNotificationWorker(intervalMs = 3000) {
   const run = () => {
     if (running) return;
     running = true;
-    inFlight = (async () => { try { await reconcileBookingNotifications(); await processPendingNotifications(); } catch { console.error('Notification retry scan failed.'); } finally { running = false; } })();
+    inFlight = (async () => { try { await reconcileBookingNotifications(); await reconcilePaymentNotifications(); await processPendingNotifications(); } catch { console.error('Notification retry scan failed.'); } finally { running = false; } })();
   };
   const timer = setInterval(run, intervalMs); timer.unref(); void run();
   return async () => { clearInterval(timer); await inFlight; };
 }
-module.exports = { deliverNotification, notifyReservation, scheduleBookingNotification, reconcileBookingNotifications, dispatchNotification, processPendingNotifications, startNotificationWorker };
+module.exports = { deliverNotification, notifyReservation, scheduleBookingNotification, reconcileBookingNotifications, reconcilePaymentNotifications, dispatchNotification, processPendingNotifications, startNotificationWorker };
