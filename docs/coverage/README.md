@@ -1,13 +1,12 @@
 # Code and Branch Coverage Evidence
 
-Coverage outputs are now configured by the CI workflows.
+Coverage artifacts generated successfully on 15-Nov-2026 for commit b5584dbc365be83bc11db9cc870d55c16ef8242f.
 
 - Root Node tests upload artifact root-node-test-coverage containing the Node built-in coverage output.
 - Backend Jest tests upload artifact vps-backend-coverage containing text, HTML, LCOV and JSON summary output, including statement, branch, function and line coverage.
 
-After the updated CI run completes:
-1. Open the CI and VPS backend CI workflow runs for the branch/commit.
-2. Download both coverage artifacts.
-3. Record actual percentages, run IDs and commit SHA in TEST_EXECUTION_SUMMARY.md.
-4. Copy sanitized reports into docs/coverage if the evaluator requires files physically under docs.
-5. Do not claim frontend coverage from backend/root coverage. Frontend Vitest coverage requires adding the matching coverage-v8 provider to the dependency lock and running that workflow.
+Recorded metrics:
+- Root Node runner: 97.96% lines, 88.82% branches, 95.00% functions. Run 43712409617; artifact root-node-test-coverage (ID 14160673661).
+- Backend Jest: 73.98% lines, 59.91% branches, 67.60% statements, 63.79% functions. Run 43712409564; artifact vps-backend-coverage (ID 14161495916).
+
+Download the artifacts from the [root CI run](https://github.com/manasi132/vehicle-parking-system/actions/runs/43712409617) and [backend CI run](https://github.com/manasi132/vehicle-parking-system/actions/runs/43712409564). Frontend Vitest tests/build passed but source coverage is not collected; do not claim frontend/full-stack coverage.
