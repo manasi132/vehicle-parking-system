@@ -62,8 +62,7 @@ async function recordEntry(req, res) {
     if (!updatedReservation) {
       return { error: 'Reservation was already used or changed.' };
     }
-    try {
-      const [entry] = await VehicleEntry.create([{
+    const [entry] = await VehicleEntry.create([{
         reservation: reservation._id, lot: reservation.lot, slot: reservation.slot,
         vehicleRegistration, enteredBy: req.user.id, entryTriggerSource: triggerSource,
         status: 'entered', entryAt: now
