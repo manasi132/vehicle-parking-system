@@ -36,7 +36,8 @@ const reservationSchema = new mongoose.Schema(
       required: true
     },
     entryAt: { type: Date, default: null },
-    exitAt: { type: Date, default: null }
+    exitAt: { type: Date, default: null },
+    cancelledAt: { type: Date, default: null }
   },
   { timestamps: true }
 );

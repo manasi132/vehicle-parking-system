@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Disposable reservation load">
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables"><collectionProp name="Arguments.arguments"/></elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="500 distinct users">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController"><boolProp name="LoopController.continue_forever">false</boolProp><stringProp name="LoopController.loops">1</stringProp></elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(users,500)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(ramp,20)}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Disposable user and slot IDs">
+          <stringProp name="filename">${__groovy(System.getenv('VPS_JMETER_CSV'))}</stringProp>
+          <stringProp name="fileEncoding">UTF-8</stringProp>
+          <stringProp name="variableNames">userId,slotId</stringProp>
+          <boolProp name="ignoreFirstLine">false</boolProp><stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp><boolProp name="recycle">false</boolProp><boolProp name="stopThread">true</boolProp><stringProp name="shareMode">shareMode.all</stringProp>
+        </CSVDataSet><hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Warm up connection">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"/></elementProp>
+          <stringProp name="HTTPSampler.domain">127.0.0.1</stringProp><stringProp name="HTTPSampler.port">${__groovy(System.getenv('VPS_JMETER_PORT'))}</stringProp>
+          <stringProp name="HTTPSampler.protocol">http</stringProp><stringProp name="HTTPSampler.path">/api/health</stringProp><stringProp name="HTTPSampler.method">GET</stringProp>
+          <stringProp name="HTTPSampler.implementation">HttpClient4</stringProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><stringProp name="HTTPSampler.connect_timeout">30000</stringProp>
+        </HTTPSamplerProxy><hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Reserve unique slot">
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"><elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{"slotId":"${slotId}","startTime":"${startTime}","endTime":"${endTime}","vehicleRegistration":"TEST${__threadNum}"}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp></collectionProp></elementProp>
+          <stringProp name="HTTPSampler.domain">127.0.0.1</stringProp><stringProp name="HTTPSampler.port">${__groovy(System.getenv('VPS_JMETER_PORT'))}</stringProp>
+          <stringProp name="HTTPSampler.protocol">http</stringProp><stringProp name="HTTPSampler.path">/api/slots/reserve</stringProp><stringProp name="HTTPSampler.method">POST</stringProp>
+          <stringProp name="HTTPSampler.implementation">HttpClient4</stringProp><boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><stringProp name="HTTPSampler.connect_timeout">30000</stringProp><stringProp name="HTTPSampler.response_timeout">120000</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Create temporary fixture JWT">
+            <stringProp name="scriptLanguage">groovy</stringProp><stringProp name="cacheKey">true</stringProp>
+            <stringProp name="script"><![CDATA[
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+import groovy.json.JsonOutput
+def enc = Base64.getUrlEncoder().withoutPadding()
+def header = enc.encodeToString('{"alg":"HS256","typ":"JWT"}'.getBytes('UTF-8'))
+def seconds = (long)(System.currentTimeMillis() / 1000)
+def payload = enc.encodeToString(JsonOutput.toJson([sub:vars.get('userId'),role:'driver',iat:seconds,exp:seconds+600]).getBytes('UTF-8'))
+def content = header + '.' + payload
+def mac = Mac.getInstance('HmacSHA256')
+mac.init(new SecretKeySpec(System.getenv('VPS_JMETER_JWT').getBytes('UTF-8'),'HmacSHA256'))
+vars.put('authorization','Bearer ' + content + '.' + enc.encodeToString(mac.doFinal(content.getBytes('UTF-8'))))
+vars.put('startTime',java.time.Instant.ofEpochMilli(System.currentTimeMillis()+3600000).toString())
+vars.put('endTime',java.time.Instant.ofEpochMilli(System.currentTimeMillis()+7200000).toString())
+            ]]></stringProp>
+          </JSR223PreProcessor><hashTree/>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="JSON and fixture authorization"><collectionProp name="HeaderManager.headers"><elementProp name="Content-Type" elementType="Header"><stringProp name="Header.name">Content-Type</stringProp><stringProp name="Header.value">application/json</stringProp></elementProp><elementProp name="Authorization" elementType="Header"><stringProp name="Header.name">Authorization</stringProp><stringProp name="Header.value">${authorization}</stringProp></elementProp></collectionProp></HeaderManager><hashTree/>
+          <SyncTimer guiclass="TestBeanGUI" testclass="SyncTimer" testname="Release all users together"><stringProp name="groupSize">${__P(users,500)}</stringProp><stringProp name="timeoutInMs">90000</stringProp></SyncTimer><hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Reservation succeeds"><collectionProp name="Asserion.test_strings"><stringProp name="48690">201</stringProp></collectionProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion><hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

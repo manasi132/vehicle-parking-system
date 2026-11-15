@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { calculateFee } from './fee.js';
 
 const error = (statusCode, code, message) => ({ statusCode, body: { status: 'error', code, message } });
-const success = payment => ({ statusCode: 200, body: { status: 'success', receiptId: payment.transactionId, balanceDue: 0 } });
+const success = (payment, settlement) => ({ statusCode: 200, body: { status: 'success', receiptId: payment.transactionId, balanceDue: settlement?.balanceDueMinor || 0, ...(settlement ? { settlement } : {}) } });
 
 /** See README for the durable store and distributed reservation-lock contract. */
 export function createChargeService({ reservationStore, gateway }) {
@@ -19,7 +19,7 @@ export function createChargeService({ reservationStore, gateway }) {
       return await reservationStore.withPaymentLock(reservationId, async () => {
         const reservation = await reservationStore.findById(reservationId, userId);
         if (!reservation || reservation.userId !== userId) return error(404, 'NOT_FOUND', 'Reservation not found.');
-        if (reservation.payment) return success(reservation.payment);
+        if (reservation.payment) return success(reservation.payment, reservation.settlement);
         if (reservation.paymentError) return error(409, 'NOT_PAYABLE', reservation.paymentError);
         let intent = reservation.paymentIntent;
         if (!intent) {

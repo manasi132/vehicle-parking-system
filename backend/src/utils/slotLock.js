@@ -23,19 +23,15 @@ async function acquireDistributedLock(slotId, owner) {
     const now = new Date();
     const leaseUntil = new Date(Date.now() + LOCK_LEASE_MS);
 
-    // Reclaim an expired lease with one atomic update.
-    const existing = await SlotLock.findOneAndUpdate(
-      { _id: slot, leaseUntil: { $lte: now } },
-      { $set: { owner, leaseUntil } },
-      { new: true }
-    ).lean();
-
-    if (existing && existing.owner === owner) return;
-
-    // MongoDB's built-in unique _id arbitrates simultaneous first acquisitions.
+    // Atomically reclaim an expired lease or create it. If an unexpired lock
+    // exists, the attempted upsert conflicts with the unique _id and retries.
     try {
-      await SlotLock.create({ _id: slot, owner, leaseUntil });
-      return;
+      const acquired = await SlotLock.findOneAndUpdate(
+        { _id: slot, leaseUntil: { $lte: now } },
+        { $set: { owner, leaseUntil } },
+        { new: true, upsert: true }
+      ).lean();
+      if (acquired && acquired.owner === owner) return;
     } catch (error) {
       if (!error || error.code !== 11000) throw error;
     }
