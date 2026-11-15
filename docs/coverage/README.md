@@ -1,12 +1,12 @@
 # Code and Branch Coverage Evidence
 
-Verified feature head: `5a5a63f8ea3d79d66480b6f8b22889bcb16bf3ef`
+Tested source head: `4ebfd3c119a759c8f8b18cf0ba5b4b59761a9cf6`
 Branch: `feat/manasi-sprint2-acceptance-hardening`
 Date: 15-Nov-2026
 
-- Root Node runner: 28 tests passed, 0 failed; 97.96% lines, 88.82% branches and 95.00% functions. [CI run 43725347588](https://github.com/manasi132/vehicle-parking-system/actions/runs/43725347588); artifact `root-node-test-coverage` ID 14166062981.
-- Backend Jest: 11 suites / 62 tests passed; 68.97% statements, 61.74% branches, 64.39% functions and 75.35% lines. [CI run 43725347569](https://github.com/manasi132/vehicle-parking-system/actions/runs/43725347569); artifact `vps-backend-coverage` ID 14165443630.
-- Frontend CI: 3 test files / 14 tests passed and Vite production build passed. [CI run 43725347630](https://github.com/manasi132/vehicle-parking-system/actions/runs/43725347630).
+- Backend Jest: 11 suites / 64 tests passed; 71.91% statements, 65.16% branches, 66.49% functions and 77.86% lines. [CI run 43726089814](https://github.com/manasi132/vehicle-parking-system/actions/runs/43726089814); artifact `vps-backend-coverage` ID 14166144811.
+- Root Node runner: 28 tests passed, 0 failed; 97.96% lines, 88.82% branches and 95.00% functions. [CI run 43726089809](https://github.com/manasi132/vehicle-parking-system/actions/runs/43726089809); artifact `root-node-test-coverage` ID 14165804060.
+- Frontend CI: 3 test files / 14 tests passed and Vite production build passed. [CI run 43726089798](https://github.com/manasi132/vehicle-parking-system/actions/runs/43726089798).
 
 The root test pipeline uses `set -o pipefail` so test failures cannot be hidden by the output tee. The successful root run contains 28 passing tests and 0 failures.
 
