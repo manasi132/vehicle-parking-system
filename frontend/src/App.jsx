@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api, clearSession, readSession, saveSession } from './api.js';
 import Sprint2Panel, { PasswordReset } from './Sprint2.jsx';
+import AvailabilityBoard from './AvailabilityBoard.jsx';
 
 const NAV = [
   { id: 'book', label: 'Find parking', icon: Search, roles: ['driver', 'admin'] },
@@ -137,6 +138,7 @@ function Workspace({ session, onLogout, setNotice }) {
   const [busy, setBusy] = useState(false);
   const [reserveSlot, setReserveSlot] = useState('');
   const [lotForm, setLotForm] = useState({ name: '', address: '', city: '' });
+  const [updatedLotName, setUpdatedLotName] = useState('');
   const [slotCount, setSlotCount] = useState('10');
   const [slotPrefix, setSlotPrefix] = useState('A');
   const [gateForm, setGateForm] = useState({ reservationId: '', vehicleNumber: '' });
@@ -360,6 +362,12 @@ function Workspace({ session, onLogout, setNotice }) {
         {page === 'admin' && role === 'admin' && <section className="content">
           <div className="page-intro"><div><h2>Manage parking capacity.</h2><p>Create lots and seed their slots for drivers to reserve.</p></div><div className="intro-icon"><LayoutDashboard size={28} /></div></div>
           <form className="admin-card" onSubmit={createLot}><h3>Create a parking lot</h3><div className="form-row"><label>Lot name<input required minLength={2} value={lotForm.name} onChange={(event) => setLotForm({ ...lotForm, name: event.target.value })} placeholder="Central Parking" /></label><label>City<input required minLength={2} value={lotForm.city} onChange={(event) => setLotForm({ ...lotForm, city: event.target.value })} placeholder="Bengaluru" /></label></div><label>Address<input required minLength={3} value={lotForm.address} onChange={(event) => setLotForm({ ...lotForm, address: event.target.value })} placeholder="Street and area" /></label><button className="primary" disabled={busy}>Create lot <ArrowRight size={16} /></button></form>
+          <form className="admin-card" onSubmit={async event => { event.preventDefault(); setBusy(true); try { await api.updateLot(selectedLot, { name: updatedLotName.trim() }); setUpdatedLotName(''); await loadLots(); setNotice({ type: 'success', text: 'Parking lot updated.' }); } catch (error) { setNotice({ type: 'error', text: error.message }); } finally { setBusy(false); } }}>
+            <h3>Update or deactivate a lot</h3><label>Parking lot<select value={selectedLot} onChange={event => setSelectedLot(event.target.value)} required><option value="">Choose a lot</option>{lots.map(lot => <option key={lot._id} value={lot._id}>{lot.name}</option>)}</select></label>
+            <label>New lot name<input value={updatedLotName} onChange={event => setUpdatedLotName(event.target.value)} minLength={2} /></label>
+            <button type="submit" className="secondary" disabled={busy || !selectedLot || updatedLotName.trim().length < 2}>Update lot</button>
+            <button type="button" className="secondary" disabled={busy || !selectedLot} onClick={async () => { setBusy(true); try { await api.deactivateLot(selectedLot); setSelectedLot(''); await loadLots(); setNotice({ type: 'success', text: 'Parking lot deactivated.' }); } catch (error) { setNotice({ type: 'error', text: error.message }); } finally { setBusy(false); } }}>Deactivate lot</button>
+          </form>
           <form className="admin-card" onSubmit={bulkSlots}><h3>Bulk-create slots</h3><label>Target lot<select value={selectedLot} onChange={(event) => setSelectedLot(event.target.value)} required><option value="">Choose a lot</option>{lots.map((lot) => <option key={lot._id} value={lot._id}>{lot.name}</option>)}</select></label><div className="form-row"><label>Prefix<input value={slotPrefix} onChange={(event) => setSlotPrefix(event.target.value)} maxLength={10} required /></label><label>Number of slots<input type="number" min="1" max="500" value={slotCount} onChange={(event) => setSlotCount(event.target.value)} required /></label></div><button className="primary" disabled={busy || !selectedLot}>Create slots <ArrowRight size={16} /></button></form>
         </section>}
         <footer className="page-footer"><span><ShieldCheck size={15} /> Role-based navigation enabled</span><span>VPS · Sprint 2</span></footer>
@@ -376,5 +384,6 @@ export default function App() {
     setSession(null);
     setNotice({ type: 'success', text: 'You have signed out.' });
   }
+  if (window.location.pathname === '/board') return <AvailabilityBoard />;
   return <><Notice notice={notice} clear={() => setNotice(null)} />{session ? <Workspace session={session} onLogout={logout} setNotice={setNotice} /> : <AuthScreen onAuthenticated={setSession} setNotice={setNotice} />}</>;
 }

@@ -5,6 +5,9 @@ const Reservation = require('../models/Reservation');
 const { withSlotLock } = require('../utils/slotLock');
 const { normalizeVehicleRegistration } = require('../utils/vehicleRegistration');
 const { emitSlotUpdate } = require('../utils/realtime');
+const { createPaymentStore } = require('../services/paymentStore');
+const { paymentGateway } = require('../services/paymentGateway');
+const { scheduleBookingNotification } = require('../services/notifications');
 
 const ACTIVE_RESERVATION_STATUSES = ['confirmed', 'checked_in'];
 
@@ -246,9 +249,7 @@ async function createReservation(req, res) {
 
     const lot = await ParkingLot.findOne({ _id: slot.lot, isActive: true }).select('_id');
     if (!lot) return { status: 404, message: 'Active parking lot not found.' };
-    if (slot.status === 'maintenance') {
-      return { status: 409, message: 'This parking slot is under maintenance.' };
-    }
+    if (slot.status === 'maintenance') return { status: 409, message: 'This parking slot is under maintenance.' };
     const conflict = await Reservation.findOne({
       slot: slot._id,
       status: { $in: ACTIVE_RESERVATION_STATUSES },
@@ -266,13 +267,16 @@ async function createReservation(req, res) {
       startTime: window.start,
       endTime: window.end,
       status: 'confirmed',
-      vehicleRegistration
+      vehicleRegistration,
+      pendingNotifications: ['BOOKING']
     });
     return { reservation };
   });
 
   if (result.status) return res.status(result.status).json({ message: result.message });
 
+  emitSlotUpdate({ slotId: String(result.reservation.slot), lotId: String(result.reservation.lot), status: 'reserved', updatedAt: new Date().toISOString() });
+  scheduleBookingNotification();
   return res.status(201).json({
     message: 'Reservation confirmed.',
     reservationId: result.reservation._id.toString(),
@@ -283,37 +287,62 @@ async function createReservation(req, res) {
 
 
 async function cancelReservation(req, res) {
-  const reservationId = req.params.reservationId;
-  if (!mongoose.isValidObjectId(reservationId)) return res.status(400).json({ message: 'Invalid reservation ID.' });
+  if (!mongoose.isValidObjectId(req.params.reservationId)) return res.status(400).json({ message: 'Invalid reservation ID.' });
+  const reservationId = new mongoose.Types.ObjectId(req.params.reservationId).toString();
   const snapshot = await Reservation.findById(reservationId).select('slot');
   if (!snapshot) return res.status(404).json({ message: 'Reservation not found.' });
 
-  const result = await withSlotLock(String(snapshot.slot), async () => {
+  const store = createPaymentStore({ currency: process.env.PAYMENT_CURRENCY || 'inr' });
+  let result;
+  try {
+    result = await store.withPaymentLock(String(reservationId), async () => {
     const reservation = await Reservation.findById(reservationId);
     if (!reservation) return { status: 404, message: 'Reservation not found.' };
     if (String(reservation.user) !== String(req.user.id)) return { status: 403, message: 'You can cancel only your own reservation.' };
     const now = new Date();
-    if (reservation.status !== 'confirmed') return { status: 409, message: 'Only confirmed future reservations can be cancelled.' };
-    if (reservation.startTime <= now) return { status: 409, message: 'A reservation that has started or is in the past cannot be cancelled.' };
+    let record = await store.getPaymentRecord(String(reservationId));
+    const recovery = reservation.status === 'cancelled' && reservation.cancelledAt && reservation.cancelledAt < reservation.startTime && record?.payment && !record.refund;
+    if (reservation.status !== 'confirmed' && !recovery) return { status: 409, message: 'Only confirmed future reservations can be cancelled.' };
+    if (!recovery && reservation.startTime <= now) return { status: 409, message: 'A reservation that has started or is in the past cannot be cancelled.' };
 
-    const updated = await Reservation.findOneAndUpdate(
-      { _id: reservation._id, user: req.user.id, status: 'confirmed', startTime: { $gt: now } },
-      { $set: { status: 'cancelled' } },
-      { new: true }
-    );
-    if (!updated) return { status: 409, message: 'Reservation state changed; refresh and retry.' };
-    return { reservation: updated, updatedAt: now };
-  });
+    // A charge may have succeeded before its receipt write failed. Reconcile it
+    // before cancellation so a paid reservation can never silently skip a refund.
+    if (!record.payment && record.intent) {
+      await store.assertPaymentLock(String(reservationId));
+      const inspected = await paymentGateway(req).inspectIntent(record.intent);
+      if (inspected.paid) {
+        await store.recordPayment(String(reservationId), { transactionId: inspected.transactionId, amountMinor: record.intent.amountMinor, currency: record.intent.currency });
+        record = await store.getPaymentRecord(String(reservationId));
+      } else if (inspected.status !== 'canceled') {
+        // Cancel the provider intent before releasing the slot, so a stale
+        // charge worker cannot confirm it after an apparently unpaid cancellation.
+        await store.assertPaymentLock(String(reservationId));
+        await paymentGateway(req).cancelIntent({ ...record.intent, reservationId: String(reservationId) });
+      }
+    }
+    let updated = reservation;
+    if (!recovery) {
+      updated = await withSlotLock(String(snapshot.slot), async () => Reservation.findOneAndUpdate(
+        { _id: reservation._id, user: req.user.id, status: 'confirmed', startTime: { $gt: new Date() } },
+        { $set: { status: 'cancelled', cancelledAt: new Date() } }, { new: true }
+      ));
+      if (!updated) return { status: 409, message: 'Reservation state changed; refresh and retry.' };
+      emitSlotUpdate({ slotId: String(updated.slot), lotId: String(updated.lot), status: 'available', reservationId: String(updated._id), updatedAt: updated.cancelledAt.toISOString() });
+    }
+    if (record.payment && !record.refund) {
+      await store.assertPaymentLock(String(reservationId));
+      const refund = await paymentGateway(req).refund({ ...record.payment, reservationId: String(reservationId) });
+      await store.recordRefund(String(reservationId), refund);
+      record = await store.getPaymentRecord(String(reservationId));
+    }
+    return { reservation: updated, refund: record.refund || null };
+    });
+  } catch {
+    return res.status(503).json({ message: 'Cancellation or refund could not be completed. Retry the same request.' });
+  }
 
   if (result.status) return res.status(result.status).json({ message: result.message });
-  emitSlotUpdate({
-    slotId: String(result.reservation.slot),
-    lotId: String(result.reservation.lot),
-    status: 'available',
-    reservationId: String(result.reservation._id),
-    updatedAt: result.updatedAt.toISOString()
-  });
-  return res.status(200).json({ message: 'Reservation cancelled.', reservation: result.reservation });
+  return res.status(200).json({ message: 'Reservation cancelled.', reservation: result.reservation, refund: result.refund });
 }
 
 module.exports = {

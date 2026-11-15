@@ -3,14 +3,18 @@ const app = require('./app');
 const connectDB = require('./config/db');
 const mongoose = require('mongoose');
 const Payment = require('./models/Payment');
+const { startNotificationWorker } = require('./services/notifications');
+const { startRealtimeRelay, stopRealtimeRelay } = require('./utils/realtime');
 const port = Number(process.env.PORT) || 4000;
 async function start() {
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('Set JWT_SECRET to a random value of at least 32 characters in backend/.env.');
   await connectDB();
   // Fail startup if the unique transaction index cannot be enforced.
   await Payment.createIndexes();
+  if (process.env.REALTIME_MONGO_CHANGE_STREAM === '1') await startRealtimeRelay();
+  const stopNotifications = startNotificationWorker();
   const server = app.listen(port, () => console.log('VPS API listening on port ' + port));
-  const shutdown = () => server.close(async () => { try { await mongoose.connection.close(); } finally { process.exit(0); } });
+  const shutdown = () => server.close(async () => { try { await stopNotifications(); await stopRealtimeRelay(); await mongoose.connection.close(); } finally { process.exit(0); } });
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }

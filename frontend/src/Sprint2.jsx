@@ -35,6 +35,7 @@ export function PasswordReset({ onBack }) {
 export default function Sprint2Panel({ role, lots = [], refreshLots }) {
   const [reservId, setReservId] = useState(''), [vehicle, setVehicle] = useState('');
   const [paymentToken, setPaymentToken] = useState('tok_visa'), [receipt, setReceipt] = useState(null);
+  const [quote, setQuote] = useState(null), [report, setReport] = useState(null);
   const publishableKey = (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '').trim();
   const cardRef = useRef(null);
   const [cardReady, setCardReady] = useState(false);
@@ -56,16 +57,19 @@ export default function Sprint2Panel({ role, lots = [], refreshLots }) {
         <Message value={action.message}/><button className="secondary" disabled={action.busy}>Cancel reservation</button>
       </form>
     </Panel>
-    <Panel title="Payment and receipt" description="Complete a test-mode payment for a completed reservation.">
-      <form className="s2-form" onSubmit={async e => { e.preventDefault(); const r = await action.run(async () => api.charge({ reservationId: reservId, paymentToken: publishableKey ? await cardRef.current.createToken() : paymentToken }), 'Payment processed.'); if (r) { setReceipt(r); cardRef.current?.clear(); } }}>
+    <Panel title="Payment and receipt" description="Optionally prepay a future reservation, or pay for a completed stay in test mode.">
+      <form className="s2-form" onSubmit={async e => { e.preventDefault(); const r = await action.run(async () => api.charge({ reservationId: reservId, paymentToken: publishableKey ? await cardRef.current.createToken() : paymentToken }), 'Payment processed.'); if (r) { const details = await api.receipt(reservId).catch(() => null); setReceipt({ ...r, ...details?.receipt }); cardRef.current?.clear(); } }}>
         <label>Reservation reference<input value={reservId} onChange={e => setReservId(e.target.value)} required /></label>
+        <button type="button" className="secondary" disabled={!reservId || action.busy} onClick={async () => { const r = await action.run(() => api.paymentQuote(reservId)); if (r) setQuote(r); }}>Check amount due</button>
+        <button type="button" className="secondary" disabled={!reservId || action.busy} onClick={async () => { const r = await action.run(() => api.receipt(reservId)); if (r?.receipt) setReceipt({ ...r.receipt, receiptId: r.receipt.transactionId, balanceDue: r.receipt.settlement?.balanceDueMinor || 0 }); }}>View receipt</button>
+        {quote && <p>Amount: {(quote.amountMinor / 100).toFixed(2)} {quote.currency.toUpperCase()} {quote.paid ? '(paid)' : '(due)'}{quote.settlement && ` · Actual: ${(quote.settlement.actualAmountMinor / 100).toFixed(2)} · Outstanding: ${(quote.settlement.balanceDueMinor / 100).toFixed(2)} · Credit: ${(quote.settlement.creditMinor / 100).toFixed(2)} (adjustments are not automatic)`}</p>}
         {publishableKey ? <SandboxCard ref={cardRef} publishableKey={publishableKey} onReady={setCardReady} /> : <label>Sandbox payment token<input value={paymentToken} onChange={e => setPaymentToken(e.target.value)} required /></label>}
         <Message value={action.message}/><button className="primary" disabled={action.busy || (Boolean(publishableKey) && !cardReady)}><CreditCard size={16}/> Pay securely</button>
       </form>
-      {receipt && <div className="s2-receipt"><CheckCircle2 size={18}/><div><strong>Payment receipt</strong><span>Receipt: {receipt.receiptId || 'Confirmed'} · Balance due: {receipt.balanceDue ?? 0}</span></div></div>}
+      {receipt && <div className="s2-receipt"><CheckCircle2 size={18}/><div><strong>Payment receipt</strong><span>Receipt: {receipt.receiptId || 'Confirmed'} · Balance due (minor units): {receipt.balanceDue ?? 0}</span>{receipt.amountMinor != null && <span>Amount: {(receipt.amountMinor / 100).toFixed(2)} {receipt.currency.toUpperCase()}</span>}{receipt.settlement && <span>Actual: {(receipt.settlement.actualAmountMinor / 100).toFixed(2)} · Credit: {(receipt.settlement.creditMinor / 100).toFixed(2)} · Outstanding: {(receipt.settlement.balanceDueMinor / 100).toFixed(2)} (adjustments are not automatic)</span>}<button type="button" onClick={() => window.print()}>Print receipt</button></div></div>}
     </Panel>
     <Panel title="Public availability board" description="Live availability snapshot from the parking search API." action={<button className="secondary" onClick={refreshLots}><RefreshCw size={14}/> Refresh</button>}>
-      <div className="s2-table"><div className="s2-row head"><span>Parking lot</span><span>Available</span><span>Total</span><span>Hourly rate</span></div>
+      <div className="s2-table" tabIndex={0} role="region" aria-label="Lot availability"><div className="s2-row head"><span>Parking lot</span><span>Available</span><span>Total</span><span>Hourly rate</span></div>
       {lots.map(l => <div className="s2-row" key={l._id}><span>{l.name} · {l.city}</span><strong>{l.availableSlots ?? '—'}</strong><span>{l.totalSlots ?? '—'}</span><span>{l.hourlyRate != null ? '₹'+l.hourlyRate : '—'}</span></div>)}
       {!lots.length && <p className="muted">No lots are currently listed.</p>}</div>
     </Panel>
@@ -74,8 +78,15 @@ export default function Sprint2Panel({ role, lots = [], refreshLots }) {
       <p className="muted">Use your browser or operating-system zoom for additional scaling.</p>
     </Panel>
     {admin && <>
+      <Panel title="Occupancy and revenue reports" description="Review activity and revenue for a date range.">
+        <form className="s2-form" onSubmit={async e => { e.preventDefault(); const data = new FormData(e.currentTarget); const r = await action.run(() => api.reports(new Date(data.get('from')).toISOString(), new Date(data.get('to')).toISOString()), 'Report loaded.'); if (r) setReport(r); }}>
+          <label>From<input name="from" type="datetime-local" required /></label><label>To<input name="to" type="datetime-local" required /></label>
+          <button className="primary" disabled={action.busy}>Load report</button><Message value={action.message}/>
+        </form>
+        {report?.lots?.map(lot => <div key={lot.lotId}><strong>{lot.name}</strong><p>Stays: {lot.occupancy.stays} · Parked minutes: {lot.occupancy.parkedMinutes.toFixed(1)}</p>{Object.entries(lot.revenue).map(([currency, value]) => <p key={currency}>Net revenue: {(value.netMinor / 100).toFixed(2)} {currency.toUpperCase()}</p>)}</div>)}
+      </Panel>
       <Panel title="Occupancy dashboard" description="Current slot counts by parking lot." action={<button className="secondary" onClick={() => api.occupancy().then(r => setOccupancy(r.lots || [])).catch(e => action.setMessage({ok:false,text:e.message}))}><RefreshCw size={14}/> Refresh</button>}>
-        <div className="s2-table"><div className="s2-row head"><span>Lot</span><span>Available</span><span>Occupied</span><span>Maintenance</span></div>{occupancy.map(o => <div className="s2-row" key={o.lotId}><span>{o.name}</span><strong>{o.available}</strong><span>{o.occupied}</span><span>{o.maintenance}</span></div>)}</div>
+        <div className="s2-table" tabIndex={0} role="region" aria-label="Occupancy counts"><div className="s2-row head"><span>Lot</span><span>Available</span><span>Occupied</span><span>Maintenance</span></div>{occupancy.map(o => <div className="s2-row" key={o.lotId}><span>{o.name}</span><strong>{o.available}</strong><span>{o.occupied}</span><span>{o.maintenance}</span></div>)}</div>
       </Panel>
       <Panel title="Pricing configuration" description="Set base hourly rates and optional peak-hour multipliers.">
         <form className="s2-form" onSubmit={e => {e.preventDefault(); action.run(() => api.setPricing(lotId,{hourlyRate:Number(rate),peakPricing:{enabled:peak,startHour:Number(startHour),endHour:Number(endHour),multiplier:Number(multiplier)}}),'Pricing saved.');}}>
@@ -98,7 +109,7 @@ export default function Sprint2Panel({ role, lots = [], refreshLots }) {
         <ul className="s2-list">{attendants.map(a=><li key={a._id}>{a.name} · {a.email || a.phone}</li>)}</ul>
       </Panel>
       <Panel title="Admin audit trail" description="Recent administrative events. Sensitive request bodies and credentials are not displayed.">
-        <div className="s2-table">{logs.map((log,i)=><div className="s2-row" key={log._id || i}><span>{log.action || log.event || 'Admin action'}</span><span>{log.actor?.name || 'Admin'}</span><span>{log.occurredAt ? new Date(log.occurredAt).toLocaleString() : '—'}</span></div>)}{!logs.length && <p className="muted">No audit events returned.</p>}</div>
+        <div className="s2-table" tabIndex={0} role="region" aria-label="Audit trail">{logs.map((log,i)=><div className="s2-row" key={log._id || i}><span>{log.action || log.event || 'Admin action'}</span><span>{log.actor?.name || 'Admin'}</span><span>{log.occurredAt ? new Date(log.occurredAt).toLocaleString() : '—'}</span></div>)}{!logs.length && <p className="muted">No audit events returned.</p>}</div>
       </Panel>
     </>}
   </div>;

@@ -6,6 +6,7 @@ const TrackingAlert = require('../models/TrackingAlert');
 const { withSlotLock } = require('../utils/slotLock');
 const { normalizeVehicleRegistration } = require('../utils/vehicleRegistration');
 const { emitSlotUpdate, subscribeSlotUpdates } = require('../utils/realtime');
+const { notifyReservation } = require('../services/notifications');
 
 async function createAlert(req, reservationId, vehicleRegistration, reason, gate = 'main', type = 'UNAUTHORIZED_VEHICLE') {
   return TrackingAlert.create({
@@ -66,6 +67,7 @@ async function recordEntry(req, res) {
     return res.status(409).json({ message: result.error, alertId: alert._id.toString() });
   }
   emitSlotUpdate(publicSlotUpdate(result.reservation, 'occupied', result.entry.entryAt));
+  await notifyReservation('ENTRY', result.reservation);
   return res.status(201).json({ message: 'Vehicle entry recorded; slot marked occupied.', entryId: result.entry._id.toString(), reservationId: result.reservation._id.toString(), slotId: result.reservation.slot.toString(), triggerSource, entry: result.entry });
 }
 async function recordExit(req, res) {
@@ -113,6 +115,7 @@ async function recordExit(req, res) {
   }
   const durationMinutes = Math.max(0, Math.ceil((result.entry.exitAt - result.entry.entryAt) / 60000));
   emitSlotUpdate(publicSlotUpdate(result.reservation, 'available', result.entry.exitAt));
+  await notifyReservation('EXIT', result.reservation);
   return res.status(200).json({ message: 'Vehicle exit recorded; slot marked available.', entryId: result.entry._id.toString(), reservationId: result.reservation._id.toString(), durationMinutes, entryAt: result.entry.entryAt, exitAt: result.entry.exitAt, triggerSource, entry: result.entry });
 }
 async function triggerSimulatedScan(req, res) {
@@ -141,7 +144,9 @@ function streamSlotUpdates(req, res) {
   res.write(': connected\n\n');
   const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 25000);
   const unsubscribe = subscribeSlotUpdates((payload) => {
-    res.write('event: slot:update\ndata: ' + JSON.stringify(payload) + '\n\n');
+    // Board events must not disclose reservation identifiers or vehicle data.
+    const { lotId, slotId, status, updatedAt } = payload;
+    res.write('event: slot:update\ndata: ' + JSON.stringify({ lotId, slotId, status, updatedAt }) + '\n\n');
   });
   req.on('close', () => {
     clearInterval(heartbeat);

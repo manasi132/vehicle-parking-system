@@ -135,6 +135,43 @@ test('already-succeeded intent is retrieved without confirming again, even with 
   assert.equal(calls, 1);
 });
 
+test('refund recovers a prior Stripe refund without creating a second one', async () => {
+  const { createHash } = await import('node:crypto');
+  const fingerprint = createHash('sha256').update('reservation-1').digest('hex');
+  let posts = 0;
+  const gateway = createStripeSandbox('sk_test_example', async (url, options) => {
+    if (options.method === 'POST') posts++;
+    if (url.includes('/payment_intents/')) return response(intent('succeeded'));
+    return response({ data: [{ id: 're_existing', payment_intent: 'pi_test', amount: 300, currency: 'usd', status: 'succeeded', metadata: { parking_reservation: fingerprint } }], has_more: false });
+  });
+  const result = await gateway.refund({ transactionId: 'pi_test', amountMinor: 300, currency: 'usd', reservationId: 'reservation-1' });
+  assert.deepEqual(result, { refundId: 're_existing', amountMinor: 300, currency: 'usd' });
+  assert.equal(posts, 0);
+});
+
+test('refund creation uses test PaymentIntent and stable idempotency and cancellation closes unused intents', async () => {
+  let created, postCount = 0, cancelled = false, cancelling = false;
+  const gateway = createStripeSandbox('sk_test_example', async (url, options) => {
+    assert.equal(options.headers['Stripe-Version'], '2024-06-20');
+    if (url.includes('/refunds?')) return response({ data: created ? [created] : [], has_more: false });
+    if (url.endsWith('/refunds')) {
+      postCount++;
+      assert.match(options.headers['Idempotency-Key'], /^parking-refund:/);
+      created = { id: 're_created', payment_intent: 'pi_test', amount: 300, currency: 'usd', status: 'succeeded', metadata: { parking_reservation: options.body.get('metadata[parking_reservation]') } };
+      return response(created);
+    }
+    if (url.endsWith('/cancel')) { cancelled = true; return response(intent('canceled')); }
+    return response(intent(cancelled ? 'canceled' : cancelling ? 'requires_payment_method' : 'succeeded'));
+  });
+  const args = { transactionId: 'pi_test', amountMinor: 300, currency: 'usd', reservationId: 'reservation-2' };
+  assert.equal((await gateway.refund(args)).refundId, 're_created');
+  assert.equal((await gateway.refund(args)).refundId, 're_created');
+  assert.equal(postCount, 1);
+  cancelling = true;
+  await gateway.cancelIntent({ id: 'pi_test', amountMinor: 300, currency: 'usd', reservationId: 'reservation-2' });
+  assert.equal(cancelled, true);
+});
+
 test('gateway declines/actions/cancelled are failures; processing is retryable', async () => {
   for (const state of ['requires_action', 'canceled', 'requires_capture']) {
     const gateway = createStripeSandbox('sk_test_example', async () => response(intent(state)));

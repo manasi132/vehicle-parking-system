@@ -45,6 +45,8 @@ export const api = {
   gateEntry: (data) => request('/api/tracking/entry', json('POST', data)),
   gateExit: (data) => request('/api/tracking/exit', json('POST', data)),
   createLot: (data) => request('/api/lots', json('POST', data)),
+  updateLot: (id, data) => request('/api/lots/' + encodeURIComponent(id), json('PATCH', data)),
+  deactivateLot: id => request('/api/lots/' + encodeURIComponent(id) + '/deactivate', { method: 'PATCH' }),
   bulkSlots: (lotId, data) => request('/api/lots/' + encodeURIComponent(lotId) + '/slots/bulk', json('POST', data)),
   requestPasswordReset: (identifier) => request('/api/auth/password/forgot', json('POST', { identifier })),
   resetPassword: (data) => request('/api/auth/password/reset', json('POST', data)),
@@ -56,6 +58,9 @@ export const api = {
   createAttendant: (data) => request('/api/admin/attendants', json('POST', data)),
   auditLogs: (limit = 50) => request('/api/admin/audit-logs?limit=' + encodeURIComponent(limit)),
   charge: (data) => request('/api/payments/charge', json('POST', data)),
+  paymentQuote: id => request('/api/payments/' + encodeURIComponent(id) + '/quote'),
+  receipt: id => request('/api/payments/' + encodeURIComponent(id) + '/receipt'),
+  reports: (start, end) => request('/api/admin/reports?' + new URLSearchParams({ start, end })),
 };
 
 export function saveSession(session) {

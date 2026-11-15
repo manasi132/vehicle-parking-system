@@ -21,17 +21,20 @@ async function main() {
         passwordHash: await bcrypt.hash(process.env.SANDBOX_ADMIN_PASSWORD, 12), role: 'admin' });
     }
     const app = require('../src/app');
+    const { startNotificationWorker } = require('../src/services/notifications');
     const port = Number(process.env.PORT) || 5000;
     const server = await new Promise((resolve, reject) => {
       const instance = app.listen(port, '127.0.0.1', () => resolve(instance));
       instance.once('error', reject);
     });
     console.log(`Disposable local sandbox API listening on http://127.0.0.1:${port}. Data is deleted on exit.`);
+    const stopNotifications = startNotificationWorker();
     if (process.env.SANDBOX_ADMIN_PASSWORD) console.log('Local sandbox admin account created: admin@sandbox.invalid');
     let stopping = false;
     const stop = async () => {
       if (stopping) return;
       stopping = true;
+      await stopNotifications();
       await new Promise(resolve => server.close(resolve));
       await mongoose.disconnect();
       await mongo.stop();

@@ -17,11 +17,9 @@ function createToken(user) {
 function hashOtp(value) {
   return crypto.createHmac('sha256', process.env.JWT_SECRET).update(String(value)).digest('hex');
 }
-
-function otpHashMatches(storedHash, candidateOtp) {
+function otpHashMatches(storedHash, otp) {
   if (typeof storedHash !== 'string' || !/^[a-f0-9]{64}$/i.test(storedHash)) return false;
-  const stored = Buffer.from(storedHash, 'hex');
-  const candidate = Buffer.from(hashOtp(candidateOtp), 'hex');
+  const stored = Buffer.from(storedHash, 'hex'), candidate = Buffer.from(hashOtp(otp), 'hex');
   return stored.length === candidate.length && crypto.timingSafeEqual(stored, candidate);
 }
 
@@ -105,12 +103,9 @@ async function requestPasswordReset(req, res) {
     try {
       await sendPasswordResetOtp({ user, otp });
     } catch (_error) {
-      // Do not retain a code that could not be delivered. Keep the public response
-      // identical for known and unknown accounts and never log the OTP/provider error.
-      user.passwordResetOtpHash = null;
-      user.passwordResetOtpExpiresAt = null;
-      await user.save();
-      console.error('Password reset delivery failed. Check the configured delivery provider.');
+      // Preserve the same public response for known and unknown accounts.
+      await User.updateOne({ _id: user._id, passwordResetOtpHash: hashOtp(otp) }, { $set: { passwordResetOtpHash: null, passwordResetOtpExpiresAt: null } });
+      console.error('Password reset delivery failed.');
     }
   }
   return res.status(200).json({ message: 'If the account exists, a password reset code has been sent. The code is valid for 10 minutes.' });

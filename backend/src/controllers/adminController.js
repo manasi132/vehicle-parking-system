@@ -96,13 +96,9 @@ async function listAuditLogs(req, res) {
   let limit = 50;
   if (rawLimit !== undefined) {
     const value = String(rawLimit);
-    if (!/^\d+$/.test(value)) {
-      return res.status(400).json({ message: 'limit must be an integer from 1 to 100.' });
-    }
+    if (!/^\d+$/.test(value)) return res.status(400).json({ message: 'limit must be an integer from 1 to 100.' });
     limit = Number(value);
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
-      return res.status(400).json({ message: 'limit must be an integer from 1 to 100.' });
-    }
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) return res.status(400).json({ message: 'limit must be an integer from 1 to 100.' });
   }
   const logs = await AuditLog.find({})
     .sort({ occurredAt: -1, _id: -1 })
