@@ -2,7 +2,7 @@
 
 Assessment date: 15-Nov-2026
 Evidence branch: `feat/manasi-sprint2-acceptance-hardening`
-Evidence commit when this checklist was refreshed: `c2fb50d43a9c5f7de0205294b197d191dd7103a7`
+Evidence commit at current automated test head: `4ebfd3c119a759c8f8b18cf0ba5b4b59761a9cf6`
 
 This tracker separates repository/CI evidence from live deployment acceptance and human sign-off. A green workflow does not by itself prove UAT, live provider delivery, a trusted deployed certificate, accessibility conformance, monthly uptime, or signed approval.
 
@@ -38,7 +38,7 @@ This tracker separates repository/CI evidence from live deployment acceptance an
 
 | Criterion | Status | Evidence / remaining action |
 |---|---|---|
-| Backend automated tests | Passed | 11 suites / 62 tests; see current backend run in `TEST_EXECUTION_SUMMARY.md`. |
+| Backend automated tests | Passed | 11 suites / 64 tests; see current backend run in `TEST_EXECUTION_SUMMARY.md`. |
 | Root Node automated tests | Passed | 28 tests / 0 failures; root coverage artifact attached to current root run. |
 | Frontend tests and production build | Passed | 3 test files / 14 tests; Vite production build passed. |
 | Nginx configuration syntax | Passed | CI validates syntax with an ephemeral self-signed certificate. This is not proof of a real deployed hostname, certificate trust or TLS handshake. |
@@ -46,17 +46,17 @@ This tracker separates repository/CI evidence from live deployment acceptance an
 | Stale booking-lock fencing | Fixed and regression-tested | Transactional fencing token check rejects a stale lock holder; takeover test proves stale writes do not commit. |
 | Live system/UAT | Not run / not signed | Team must execute scenarios on the accepted application and fill the UAT/sign-off sheet with actual results and tester details. |
 | Stripe live test-mode transaction | Pending | Automated adapter/service tests use synthetic provider responses. A real Stripe test account/key and client-generated test token are required for an actual charge/refund. |
-| Reservation notification crash recovery | Partial | Notifications are scheduled after transaction commit. A process crash between commit and enqueue can still lose an entry/exit event; durable transactional outbox coupling remains future work. |
+| Reservation notification crash recovery | Automated recovery passed | Entry/exit Notification records are written in the same transaction as their domain state; Payment receipt and pending marker are written atomically, then reconciled into the idempotent Notification outbox after restart. Actual production delivery-provider configuration and monitoring remain pending. |
 | Realtime event durability | Partial | Events are published after commit; the slot state itself is transactional, but publication is not in the same durable outbox. Cross-worker relay is tested with a replica set; deployment topology must be verified. |
 | Performance | Partial | Local JMeter runs exist, but representative production-like 500-user acceptance with normal proxy/keep-alive settings and repeatable p90 evidence is pending. |
 | Security | Partial | Passive/local ZAP baseline and automated security tests exist. Active/deployed penetration testing and final environment review are pending. |
 | TLS deployment | Pending | Real hostname, trusted certificate/full chain, renewal and external handshake checks are not supplied. |
 | Accessibility | Pending | Formal axe/WCAG, keyboard-only and screen-reader evidence not supplied. |
-| Report date-range accuracy | Pending | Add seeded records inside/outside the requested range and record the actual comparison; include wrong-role denial. |
+| Report date-range accuracy | Automated regression passed | Backend integration test seeds events before, inside and exactly at the UTC end boundary; verifies half-open range revenue/refund and parked minutes, malformed ranges and non-admin denial. Manual use/acceptance remains part of UAT. |
 | Monthly availability | Pending | 99.5% uptime is an operational monthly measurement, not something CI can establish. |
 
 ## Part 4 — Final acceptance
 
-The repository now has passing automated root/backend/frontend checks and the two identified consistency defects have been corrected. The project is **not yet formally accepted**: the open PR #40 needs independent review, and UAT, actual demo recordings, final document approvals and real deployment/provider evidence remain outstanding.
+The repository now has passing automated root/backend/frontend checks, audit atomicity and stale-lock fencing are corrected, and entry/exit/payment notification enqueue recovery now has transactional/outbox regression coverage. The project is **not yet formally accepted**: the open PR #40 needs independent review, and UAT, actual demo recordings, final document approvals and real deployment/provider evidence remain outstanding.
 
 Use `docs/ACCEPTANCE_HANDOFF.md` as the remaining-work checklist. Do not turn a pending/not-run item into a pass without recording the actual tester, environment, commit, result and redacted evidence.
