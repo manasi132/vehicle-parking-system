@@ -27,7 +27,7 @@ PR #40 remains open to main. PR #42 integrated Sanjana's Sprint 2 branch into Ma
 
 **Unit vs integration vs system vs acceptance?** Unit tests isolate calculations/validators; integration tests connect routes/database/providers; system tests cover workflows; UAT is performed by driver/attendant/admin representatives and recorded with sign-off.
 
-**What do CI results prove?** At commit 31f9912 backend CI passed 11 suites/58 tests, frontend CI 3 files/14 tests and production build, root CI two tests and Nginx syntax. They do not prove UAT, live provider, deployed TLS, full coverage or production performance.
+**What do CI results prove?** At commit 02fd555 backend CI passed 11 suites/58 tests with 73.98% line and 59.91% branch coverage; frontend CI passed 3 files/14 tests and production build; root CI recorded 97.96% line and 88.82% branch coverage, with Nginx syntax validation. They do not prove UAT, live provider, deployed TLS, full coverage or production performance.
 
 **What deviations should we explain?** Simulated ANPR/IoT; SSE board; Stripe test mode; UTC peak pricing; development notification adapter; Nginx hostname placeholder; optional cross-worker change-stream relay.
 
