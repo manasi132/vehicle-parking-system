@@ -16,6 +16,7 @@ const VehicleEntry = require('../src/models/VehicleEntry');
 const SlotLock = require('../src/models/SlotLock');
 const AuditLog = require('../src/models/AuditLog');
 const Notification = require('../src/models/Notification');
+const Payment = require('../src/models/Payment');
 const { sendPasswordResetOtp } = require('../src/services/passwordResetDelivery');
 
 let mongo;
@@ -35,7 +36,7 @@ beforeAll(async () => {
   }
   await Promise.all([
     User.init(), ParkingLot.init(), ParkingSlot.init(), Reservation.init(),
-    VehicleEntry.init(), SlotLock.init(), AuditLog.init(), Notification.init()
+    VehicleEntry.init(), SlotLock.init(), AuditLog.init(), Notification.init(), Payment.init()
   ]);
 }, 120000);
 
@@ -49,7 +50,8 @@ afterEach(async () => {
       VehicleEntry.deleteMany({}),
       SlotLock.deleteMany({}),
       AuditLog.deleteMany({}),
-      Notification.deleteMany({})
+      Notification.deleteMany({}),
+      Payment.deleteMany({})
     ]);
   }
   delete global.passwordResetOtpDelivery;
@@ -464,6 +466,79 @@ describe('Manasi Sprint 2 acceptance coverage', () => {
     expect(await SlotLock.countDocuments({ _id: String(slot._id) })).toBe(0);
     expect(await Notification.countDocuments({ reservationId: String(reservation._id), type: 'ENTRY' })).toBe(0);
     auditFailure.mockRestore();
+  });
+
+
+  test('admin report filters gross/refund revenue and parked duration to the UTC half-open date range', async () => {
+    const { user, token } = await createUser({ role: 'admin', email: 'report-admin@example.com' });
+    const { token: driverToken } = await createUser({ role: 'driver', email: 'report-driver@example.com' });
+    const lot = await createLot(user._id, 'Date Range Report Lot');
+    const slots = await ParkingSlot.insertMany([
+      { lot: lot._id, slotNumber: 'REPORT-01', status: 'available' },
+      { lot: lot._id, slotNumber: 'REPORT-02', status: 'occupied' }
+    ]);
+
+    const rangeStart = new Date('2026-11-01T00:00:00.000Z');
+    const rangeEnd = new Date('2026-11-02T00:00:00.000Z');
+    const r1 = await Reservation.create({
+      user: user._id, lot: lot._id, slot: slots[0]._id,
+      startTime: new Date('2026-10-31T23:00:00.000Z'), endTime: new Date('2026-11-01T01:00:00.000Z'),
+      entryAt: new Date('2026-10-31T23:30:00.000Z'), exitAt: new Date('2026-11-01T00:30:00.000Z'),
+      status: 'completed'
+    });
+    const r2 = await Reservation.create({
+      user: user._id, lot: lot._id, slot: slots[1]._id,
+      startTime: new Date('2026-11-01T23:00:00.000Z'), endTime: new Date('2026-11-02T01:00:00.000Z'),
+      entryAt: new Date('2026-11-01T23:30:00.000Z'), exitAt: new Date('2026-11-02T00:30:00.000Z'),
+      status: 'completed'
+    });
+    const r3 = await Reservation.create({
+      user: user._id, lot: lot._id, slot: slots[0]._id,
+      startTime: new Date('2026-10-31T21:00:00.000Z'), endTime: rangeStart,
+      entryAt: new Date('2026-10-31T22:00:00.000Z'), exitAt: rangeStart,
+      status: 'completed'
+    });
+
+    await Payment.create([
+      {
+        _id: String(r1._id),
+        payment: { transactionId: 'pi-report-in-range', amountMinor: 1200, currency: 'inr', paidAt: rangeStart.toISOString() },
+        refund: { refundId: 're-report-in-range', amountMinor: 200, currency: 'inr', refundedAt: '2026-11-01T12:00:00.000Z' }
+      },
+      {
+        _id: String(r2._id),
+        payment: { transactionId: 'pi-report-at-end', amountMinor: 9900, currency: 'inr', paidAt: rangeEnd.toISOString() }
+      },
+      {
+        _id: String(r3._id),
+        payment: { transactionId: 'pi-report-before-range', amountMinor: 8800, currency: 'inr', paidAt: '2026-10-31T23:59:59.999Z' }
+      }
+    ]);
+
+    const response = await request(app).get('/api/admin/reports')
+      .query({ start: rangeStart.toISOString(), end: rangeEnd.toISOString() })
+      .set('Authorization', 'Bearer ' + token);
+    expect(response.status).toBe(200);
+    expect(response.body.start).toBe(rangeStart.toISOString());
+    expect(response.body.end).toBe(rangeEnd.toISOString());
+    const summary = response.body.lots.find(item => item.lotId === String(lot._id));
+    expect(summary.occupancy).toMatchObject({ available: 1, occupied: 1, stays: 2, parkedMinutes: 60 });
+    expect(summary.revenue.inr).toEqual({ grossMinor: 1200, refundMinor: 200, netMinor: 1000 });
+
+    const denied = await request(app).get('/api/admin/reports')
+      .query({ start: rangeStart.toISOString(), end: rangeEnd.toISOString() })
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(denied.status).toBe(403);
+
+    for (const query of [
+      { start: '', end: rangeEnd.toISOString() },
+      { start: 'not-a-date', end: rangeEnd.toISOString() },
+      { start: rangeEnd.toISOString(), end: rangeStart.toISOString() }
+    ]) {
+      const invalid = await request(app).get('/api/admin/reports')
+        .query(query).set('Authorization', 'Bearer ' + token);
+      expect(invalid.status).toBe(400);
+    }
   });
 
 });
