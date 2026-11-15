@@ -2,6 +2,7 @@
 
 Assessment date: 15-Nov-2026
 Evidence branch: feat/manasi-sprint2-acceptance-hardening
+Evidence commit: 02fd555615b6e7ec81264dde1be98417e72e3fa9
 
 This tracker distinguishes repository evidence from human or deployment acceptance. A passing GitHub workflow does not constitute UAT, a live provider test, a deployed TLS test, or a signed final approval.
 
@@ -41,12 +42,12 @@ This tracker distinguishes repository evidence from human or deployment acceptan
 | Criterion | Status | Evidence / action |
 |---|---|---|
 | Original cases updated for Sprint 2 | Updated candidate | Test Plan Revision 1.1 and Sprint 2 addendum. |
-| Backend automated tests | Passed at recorded commit | 11 suites / 58 tests passed in run 43713153581. |
-| Frontend tests/build | Passed at recorded commit | 3 files / 14 tests and Vite production build passed in run 43713153635. |
-| Root tests | Passed at recorded commit | Two tests passed in run 43712409617. |
+| Backend automated tests | Passed at recorded commit | 11 suites / 58 tests passed in run 43713544571. |
+| Frontend tests/build | Passed at recorded commit | 3 files / 14 tests and Vite production build passed in run 43713544567. |
+| Root tests | Passed at recorded commit | Two tests passed in run 43713544612. |
 | Nginx syntax | Passed | CI ephemeral certificate syntax test; not a deployed TLS handshake. |
 | System/UAT | Partial | Scenarios documented; signed UAT result missing. |
-| Code/branch coverage | Generated | Root: 97.96% line / 88.82% branch. Backend: 73.98% line / 59.91% branch. Artifacts are attached to runs 43713153575 and 43713153581. Frontend source coverage is not collected. |
+| Code/branch coverage | Generated | Root: 97.96% line / 88.82% branch / 95.00% functions. Backend: 73.98% line / 59.91% branch / 67.60% statements / 63.79% functions. Artifacts are attached to runs 43713544612 (ID 14161786738) and 43713544571 (ID 14161786905). Frontend source coverage is not collected. |
 | Performance | Partial | Local JMeter tests exist; 500-user results variable and some low p90 results used test-only keep-alive override. |
 | Security | Partial | ZAP run was passive and local only; active/deployed security validation remains. |
 | Audit atomicity | Open failure | Lot mutation can persist when audit write fails. Intentionally not changed here. |
