@@ -1,16 +1,16 @@
 # Sprint 2 Test Execution Summary
 
 Evidence branch: `feat/manasi-sprint2-acceptance-hardening`
-Verified source/test head: `2137f177a95ed86a1c9107044d5eec23208679e0`
+Verified feature head: `91568a2ac84eaebfb7818a7357feb009992e0f1f`
 Date: 15-Nov-2026
 
-## Automated checks — all green
+## Automated checks — all green on the verified feature head
 
 | Workflow | Run ID | Recorded outcome |
 |---|---:|---|
-| VPS backend CI | [43726415859](https://github.com/manasi132/vehicle-parking-system/actions/runs/43726415859) | 11 suites / 64 tests passed. Coverage: 71.91% statements, 65.16% branches, 66.49% functions, 77.86% lines. Artifact `vps-backend-coverage` ID 14166502188. |
-| General CI / root Node tests + Nginx config | [43726415851](https://github.com/manasi132/vehicle-parking-system/actions/runs/43726415851) | Root: 28 tests passed, 0 failed; 97.96% lines, 88.82% branches and 95.00% functions. Nginx syntax validation with an ephemeral test certificate passed. Artifact `root-node-test-coverage` ID 14167050321. |
-| Frontend CI | [43726415999](https://github.com/manasi132/vehicle-parking-system/actions/runs/43726415999) | 3 test files / 14 tests passed; Vite production build passed. |
+| VPS backend CI | [43726615400](https://github.com/manasi132/vehicle-parking-system/actions/runs/43726615400) | 11 suites / 64 tests passed. Coverage: 71.91% statements, 65.16% branches, 66.49% functions, 77.86% lines. Artifact `vps-backend-coverage` ID 14166726088. |
+| General CI / root Node tests + Nginx config | [43726615445](https://github.com/manasi132/vehicle-parking-system/actions/runs/43726615445) | Root: 28 tests passed, 0 failed; 97.96% lines, 88.82% branches and 95.00% functions. Nginx syntax validation with an ephemeral test certificate passed. Artifact `root-node-test-coverage` ID 14166542268. |
+| Frontend CI | [43726615401](https://github.com/manasi132/vehicle-parking-system/actions/runs/43726615401) | 3 test files / 14 tests passed; Vite production build passed. |
 
 The root workflow uses `set -o pipefail`, so a failed test propagates through the `tee` coverage pipeline and fails the job. The root test verifies the current Node command and failure propagation. The tested run records 28/28 tests passing; an earlier run with a failing assertion masked by the pipeline is not treated as passing evidence.
 
