@@ -19,7 +19,7 @@
         <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Disposable user and slot IDs">
           <stringProp name="filename">${__groovy(System.getenv('VPS_JMETER_CSV'))}</stringProp>
           <stringProp name="fileEncoding">UTF-8</stringProp>
-          <stringProp name="variableNames">userId,slotId</stringProp>
+          <stringProp name="variableNames">userId,slotId,sourceIp</stringProp>
           <boolProp name="ignoreFirstLine">false</boolProp><stringProp name="delimiter">,</stringProp>
           <boolProp name="quotedData">false</boolProp><boolProp name="recycle">false</boolProp><boolProp name="stopThread">true</boolProp><stringProp name="shareMode">shareMode.all</stringProp>
         </CSVDataSet><hashTree/>
@@ -27,6 +27,7 @@
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"/></elementProp>
           <stringProp name="HTTPSampler.domain">127.0.0.1</stringProp><stringProp name="HTTPSampler.port">${__groovy(System.getenv('VPS_JMETER_PORT'))}</stringProp>
           <stringProp name="HTTPSampler.protocol">http</stringProp><stringProp name="HTTPSampler.path">/api/health</stringProp><stringProp name="HTTPSampler.method">GET</stringProp>
+          <stringProp name="HTTPSampler.ipSource">${sourceIp}</stringProp><intProp name="HTTPSampler.ipSourceType">0</intProp>
           <stringProp name="HTTPSampler.implementation">HttpClient4</stringProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><stringProp name="HTTPSampler.connect_timeout">30000</stringProp>
         </HTTPSamplerProxy><hashTree/>
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Reserve unique slot">
@@ -34,6 +35,7 @@
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"><elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{"slotId":"${slotId}","startTime":"${startTime}","endTime":"${endTime}","vehicleRegistration":"TEST${__threadNum}"}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp></collectionProp></elementProp>
           <stringProp name="HTTPSampler.domain">127.0.0.1</stringProp><stringProp name="HTTPSampler.port">${__groovy(System.getenv('VPS_JMETER_PORT'))}</stringProp>
           <stringProp name="HTTPSampler.protocol">http</stringProp><stringProp name="HTTPSampler.path">/api/slots/reserve</stringProp><stringProp name="HTTPSampler.method">POST</stringProp>
+          <stringProp name="HTTPSampler.ipSource">${sourceIp}</stringProp><intProp name="HTTPSampler.ipSourceType">0</intProp>
           <stringProp name="HTTPSampler.implementation">HttpClient4</stringProp><boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><stringProp name="HTTPSampler.connect_timeout">30000</stringProp><stringProp name="HTTPSampler.response_timeout">120000</stringProp>
         </HTTPSamplerProxy>
         <hashTree>

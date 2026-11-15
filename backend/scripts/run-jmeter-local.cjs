@@ -27,7 +27,7 @@ async function main() {
     const users = await User.insertMany(Array.from({ length: count }, (_, i) => ({ name: `JMeter User ${i}`, email: `jmeter${i}@example.invalid`, passwordHash: 'fixture' })));
     const lot = await Lot.create({ name: 'JMeter Lot', address: '10 Test Street', city: 'Test City', hourlyRate: 50, createdBy: users[0]._id });
     const slots = await Slot.insertMany(users.map((_, i) => ({ lot: lot._id, slotNumber: 'J' + i })));
-    fs.writeFileSync(csv, users.map((user, i) => `${user._id},${slots[i]._id}`).join('\n') + '\n', { mode: 0o600 });
+    fs.writeFileSync(csv, users.map((user, i) => `${user._id},${slots[i]._id},127.0.${Math.floor(i / 250)}.${(i % 250) + 2}`).join('\n') + '\n', { mode: 0o600 });
     const secret = crypto.randomBytes(32).toString('hex');
     child = fork(require.resolve('./load-server-child.cjs'), [], { env: { ...process.env, LOAD_MONGODB_URI: uri, JWT_SECRET: secret, LOAD_INSTRUMENT: '1' }, stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
     const port = await new Promise((resolve, reject) => {
@@ -48,8 +48,8 @@ async function main() {
     if (!fs.existsSync(result)) throw new Error('JMeter did not produce sample results.');
     const lines = fs.readFileSync(result, 'utf8').trim().split(/\r?\n/);
     const columns = lines.shift().split(',');
-    const elapsedIndex = columns.indexOf('elapsed'), codeIndex = columns.indexOf('responseCode'), successIndex = columns.indexOf('success'), labelIndex = columns.indexOf('label');
-    if ([elapsedIndex, codeIndex, successIndex, labelIndex].some(index => index < 0)) throw new Error('Unexpected JMeter result format.');
+    const elapsedIndex = columns.indexOf('elapsed'), codeIndex = columns.indexOf('responseCode'), successIndex = columns.indexOf('success'), labelIndex = columns.indexOf('label'), timeIndex = columns.indexOf('timeStamp');
+    if ([elapsedIndex, codeIndex, successIndex, labelIndex, timeIndex].some(index => index < 0)) throw new Error('Unexpected JMeter result format.');
     const allSamples = lines.map(line => line.split(','));
     const samples = allSamples.filter(sample => sample[labelIndex] === 'Reserve unique slot');
     const warmup = allSamples.filter(sample => sample[labelIndex] === 'Warm up connection');
@@ -68,13 +68,17 @@ async function main() {
     }
     successful.sort((a, b) => a - b);
     all.sort((a, b) => a - b);
+    const percentile = (values, p) => values.length ? values[Math.ceil(values.length * p) - 1] : null;
     const p90 = successful.length ? successful[Math.ceil(successful.length * 0.9) - 1] : null;
     const warmFailures = warmup.filter(sample => sample[successIndex] !== 'true' || sample[codeIndex] !== '200').length;
     console.log('JMeter warmup samples:', warmup.length, 'warmup failures:', warmFailures);
     console.log('JMeter samples:', samples.length, 'statuses:', JSON.stringify(counts));
-    console.log('All-sample p90 milliseconds:', all.length ? all[Math.ceil(all.length * 0.9) - 1] : null);
-    console.log('Successful-response p90 milliseconds:', p90, 'persisted reservations:', await Reservation.countDocuments({ lot: lot._id }));
-    console.log('Test mode,', count, 'fixture users, loopback API and disposable MongoDB; production rate limits relaxed.');
+    const first = Math.min(...samples.map(sample => Number(sample[timeIndex])));
+    const last = Math.max(...samples.map(sample => Number(sample[timeIndex]) + Number(sample[elapsedIndex])));
+    console.log('All-sample p50/p90/p95 milliseconds:', percentile(all, 0.5), percentile(all, 0.9), percentile(all, 0.95));
+    console.log('Successful-response p50/p90/p95 milliseconds:', percentile(successful, 0.5), p90, percentile(successful, 0.95));
+    console.log('Reservation throughput per second:', samples.length && last > first ? (samples.length * 1000 / (last - first)).toFixed(2) : 'unavailable', 'persisted reservations:', await Reservation.countDocuments({ lot: lot._id }));
+    console.log('Fixture users:', count, 'distinct loopback source IPs; rate-limit mode:', process.env.LOAD_PRODUCTION_LIMITS === '1' ? 'production' : 'test (relaxed)', '; keep-alive override:', process.env.LOAD_KEEPALIVE_MS || 'none', '; MongoDB pool override:', process.env.LOAD_MONGO_POOL || 'none');
     if (code !== 0 || warmup.length !== count || warmFailures || samples.length !== count || successful.length !== count || p90 > 3000) process.exitCode = 1;
   } finally {
     if (child?.connected) {

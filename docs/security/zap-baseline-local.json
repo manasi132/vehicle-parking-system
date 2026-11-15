@@ -1,8 +1,8 @@
 {
   "@programName": "ZAP",
   "@version": "2.17.0",
-  "@generated": "Sun, 15 Nov 2026 01:05:39",
-  "created": "2026-11-14T19:35:39.840417700Z",
+  "@generated": "Sun, 15 Nov 2026 14:39:25",
+  "created": "2026-11-15T09:09:25.750291100Z",
   "insights": [
     {
       "level": "Info",
@@ -55,23 +55,23 @@
     {
       "level": "Info",
       "reason": "Informational",
-      "site": "http://127.0.0.1:63983",
+      "site": "http://127.0.0.1:58486",
       "key": "insight.code.2xx",
       "description": "Percentage of responses with status code 2xx",
-      "statistic": "60"
+      "statistic": "36"
     },
     {
       "level": "Info",
       "reason": "Informational",
-      "site": "http://127.0.0.1:63983",
+      "site": "http://127.0.0.1:58486",
       "key": "insight.code.4xx",
       "description": "Percentage of responses with status code 4xx",
-      "statistic": "40"
+      "statistic": "63"
     },
     {
       "level": "Info",
       "reason": "Informational",
-      "site": "http://127.0.0.1:63983",
+      "site": "http://127.0.0.1:58486",
       "key": "insight.endpoint.ctype.application/json",
       "description": "Percentage of endpoints with content type application/json",
       "statistic": "100"
@@ -79,25 +79,33 @@
     {
       "level": "Info",
       "reason": "Informational",
-      "site": "http://127.0.0.1:63983",
+      "site": "http://127.0.0.1:58486",
       "key": "insight.endpoint.method.GET",
       "description": "Percentage of endpoints with method GET",
-      "statistic": "100"
+      "statistic": "71"
     },
     {
       "level": "Info",
       "reason": "Informational",
-      "site": "http://127.0.0.1:63983",
+      "site": "http://127.0.0.1:58486",
+      "key": "insight.endpoint.method.POST",
+      "description": "Percentage of endpoints with method POST",
+      "statistic": "28"
+    },
+    {
+      "level": "Info",
+      "reason": "Informational",
+      "site": "http://127.0.0.1:58486",
       "key": "insight.endpoint.total",
       "description": "Count of total endpoints",
-      "statistic": "4"
+      "statistic": "7"
     }
   ],
   "site": [
     {
-      "@name": "http://127.0.0.1:63983",
+      "@name": "http://127.0.0.1:58486",
       "@host": "127.0.0.1",
-      "@port": "63983",
+      "@port": "58486",
       "@ssl": "false",
       "alerts": []
     },
@@ -118,7 +126,7 @@
           "desc": "<p>The application appears to be a modern web application. If you need to explore it automatically then the Client Spider may well be more effective than the standard one.</p>",
           "instances": [
             {
-              "id": "1",
+              "id": "0",
               "uri": "http://127.0.0.1:15182/",
               "nodeName": "http://127.0.0.1:15182/",
               "method": "GET",
@@ -128,7 +136,7 @@
               "otherinfo": "No links have been found while there are scripts, which is an indication that this is a modern web application."
             },
             {
-              "id": "2",
+              "id": "3",
               "uri": "http://127.0.0.1:15182/robots.txt",
               "nodeName": "http://127.0.0.1:15182/robots.txt",
               "method": "GET",

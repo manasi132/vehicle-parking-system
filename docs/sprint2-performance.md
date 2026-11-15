@@ -34,3 +34,45 @@ A further instrumented diagnostic with the same 30-second test-only keep-alive r
 An additional experiment parallelized two booking database reads while keeping the same diagnostic setup. All 500 requests returned HTTP 201, but JMeter p90 was **6,331 ms** and API-worker p90 was **5,731 ms** in that run. Because the experiment did not improve the measured result, that parallel-query change was reverted; no performance improvement is claimed from it.
 
 To reproduce, set `JMETER_HOME` to a local JMeter 5.6.3 installation and `JMETER_JAVA` to a compatible Java 17 or 21 executable, then run `node backend/scripts/run-jmeter-local.cjs`. Set `VPS_JMETER_USERS` to 100, 200 or 500; the runner uses an ephemeral local MongoDB and generates temporary fixture credentials in memory. Do not point the script at a shared or production environment.
+
+## Production-rate-limit local profiling
+
+The load harness now binds each virtual user to a distinct actual loopback source address and starts the API with production rate-limit settings; it does not spoof forwarded headers. Each run used one API worker, a disposable standalone MongoDB, a synchronized request burst after a 20-user-per-second ramp, and a **test-only** 30-second keep-alive override. These settings differ from the earlier relaxed-limit runs, so they are not a controlled before/after comparison.
+
+| Users | HTTP 201 / errors | p50 | p90 | p95 | Request throughput |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 100 | 100 / 0 | 720 ms | 758 ms | 764 ms | 127.88/s |
+| 200 | 200 / 0 | 1,018 ms | 1,093 ms | 1,097 ms | 178.41/s |
+| 500 | 500 / 0 | 4,611 ms | 4,911 ms | 4,935 ms | 98.87/s |
+
+All 500 reservations persisted, but p90 remained above 3,000 ms. A separate diagnostic with MongoDB pool size 200 produced a 4,523 ms p90; that alone does not justify a production pool change. Query instrumentation in a further 500-user run measured operation p90s including driver/event-loop queueing: user lookup 787 ms, slot-lock acquisition 639 ms, slot lookup 415 ms, lot lookup 355 ms, overlap query 395 ms and lock release 424 ms. It does not isolate network, MongoDB execution time or CPU and does not prove a single root cause. A parallel-read experiment increased overlap-query and lot-query p90 to about 1,038 ms and did not improve the result, so it was reverted.
+
+Set `LOAD_PRODUCTION_LIMITS=1` for the production rate-limit configuration and `LOAD_KEEPALIVE_MS=30000` only when explicitly investigating the local keep-alive limitation. `LOAD_MONGO_POOL` and `LOAD_QUERY_PROFILE=1` are diagnostic-only options. A representative multi-host run without test-only transport overrides is still required for sign-off.
+
+### Further profiling after notification changes
+
+Using distinct **actual** loopback source IPs with production rate-limit settings, a 30-second test-only keep-alive override and a disposable MongoDB, the initial measured runs returned 100/100, 200/200 and 500/500 HTTP 201 responses:
+
+| Users | p50 | p90 | p95 | Throughput | Errors |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 100 | 720 ms | 758 ms | 764 ms | 127.88/s | 0 |
+| 200 | 1,018 ms | 1,093 ms | 1,097 ms | 178.41/s | 0 |
+| 500 | 4,611 ms | 4,911 ms | 4,935 ms | 98.87/s | 0 |
+
+After adding the notification queue and booking-event marker, one subsequent series returned 100/100, 200/200 and 500/500 HTTP 201 responses, with p90 values of 4,556 ms, 1,842 ms and 9,989 ms respectively. Successful-response p50/p95 were 3,661/4,698 ms, 1,752/1,862 ms and 9,665/10,028 ms; throughput was 19.74/s, 104.82/s and 48.66/s. This local machine showed substantial variability; these figures are not a controlled before/after performance claim. An additional 500-user run with a test-only MongoDB pool of 200 returned 500 successes but a 15,200 ms p90, so no production pool increase was applied. Instrumented query timings include queueing and event-loop delays; they show the bottleneck involves the API/database path but do not establish one root cause.
+
+`node backend/scripts/profile-booking-index.cjs` compares overlap-query indexes on a disposable fixture with 500 historical windows for one slot. The existing start-first index examined 451 keys for the sampled query; an additive end-first index examined 51. The schema retains both indexes so MongoDB can choose based on selectivity; the additional index needs a controlled build and storage/write-cost review before deployment. The JMeter fixture has unique slots without historical windows, so this index result is **not** evidence that the 500-user p90 target is met. The target remains unmet and must be repeated on representative hardware and a real deployment without test-only keep-alive changes.
+
+### Booking notification batching run
+
+Booking creation now stores a notification marker in the reservation write. A bounded worker batches idempotent outbox upserts and clears markers afterward, preserving a recovery path if the process stops before enqueue. This avoids a separate outbox write on each booking's response path. The following local JMeter runs used the same production rate-limit mode and distinct loopback IPs, but still used the test-only 30-second keep-alive override, standalone disposable MongoDB and a single API worker:
+
+| Users | HTTP 201 / errors | p50 | p90 | p95 | Throughput |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 100 | 100 / 0 | 549 ms | 599 ms | 605 ms | 130.89/s |
+| 200 | 200 / 0 | 1,076 ms | 1,149 ms | 1,161 ms | 165.98/s |
+| 500 (profiled) | 500 / 0 | 2,616 ms | 2,877 ms | 2,899 ms | 166.61/s |
+| 500 (repeat 1) | 500 / 0 | 2,113 ms | 2,297 ms | 2,316 ms | 208.94/s |
+| 500 (repeat 2) | 500 / 0 | 2,549 ms | 2,754 ms | 2,765 ms | 174.22/s |
+
+These runs met the numeric p90 target locally, but earlier runs varied substantially and the keep-alive setting was not the deployed default. A deployed, multi-host test with actual proxy settings, persistent data and notification delivery remains necessary before performance sign-off.
