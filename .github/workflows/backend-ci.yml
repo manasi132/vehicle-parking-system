@@ -1,4 +1,4 @@
-﻿name: VPS backend CI
+name: VPS backend CI
 
 on:
   pull_request:
@@ -23,39 +23,32 @@ permissions:
 
 jobs:
   backend-tests:
-    name: Backend tests and syntax checks
+    name: Backend tests, syntax and coverage
     runs-on: ubuntu-24.04
-
-    services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: '24'
           package-manager-cache: false
-
       - name: Install backend dependencies
         working-directory: backend
         run: npm install --no-audit --no-fund
-
       - name: Check JavaScript syntax
         run: find backend/src backend/tests -name '*.js' -print0 | xargs -0 -n1 node --check
-
-      - name: Run backend test suite
+      - name: Run backend tests with line and branch coverage
         working-directory: backend
         env:
           MONGODB_TEST_URI: mongodb://127.0.0.1:27017/vps_test
-        run: npm test
+        run: npm test -- --coverage --coverageReporters=text --coverageReporters=html --coverageReporters=lcov --coverageReporters=json-summary --collectCoverageFrom='src/**/*.js'
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vps-backend-coverage
+          path: backend/coverage/
+          if-no-files-found: warn
+          retention-days: 30
