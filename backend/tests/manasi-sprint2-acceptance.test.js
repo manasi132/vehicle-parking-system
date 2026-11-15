@@ -15,6 +15,7 @@ const Reservation = require('../src/models/Reservation');
 const VehicleEntry = require('../src/models/VehicleEntry');
 const SlotLock = require('../src/models/SlotLock');
 const AuditLog = require('../src/models/AuditLog');
+const Notification = require('../src/models/Notification');
 const { sendPasswordResetOtp } = require('../src/services/passwordResetDelivery');
 
 let mongo;
@@ -34,7 +35,7 @@ beforeAll(async () => {
   }
   await Promise.all([
     User.init(), ParkingLot.init(), ParkingSlot.init(), Reservation.init(),
-    VehicleEntry.init(), SlotLock.init(), AuditLog.init()
+    VehicleEntry.init(), SlotLock.init(), AuditLog.init(), Notification.init()
   ]);
 }, 120000);
 
@@ -47,7 +48,8 @@ afterEach(async () => {
       Reservation.deleteMany({}),
       VehicleEntry.deleteMany({}),
       SlotLock.deleteMany({}),
-      AuditLog.deleteMany({})
+      AuditLog.deleteMany({}),
+      Notification.deleteMany({})
     ]);
   }
   delete global.passwordResetOtpDelivery;
@@ -460,6 +462,7 @@ describe('Manasi Sprint 2 acceptance coverage', () => {
     expect(await VehicleEntry.countDocuments({ reservation: reservation._id })).toBe(0);
     expect(await AuditLog.countDocuments({})).toBe(0);
     expect(await SlotLock.countDocuments({ _id: String(slot._id) })).toBe(0);
+    expect(await Notification.countDocuments({ reservationId: String(reservation._id), type: 'ENTRY' })).toBe(0);
     auditFailure.mockRestore();
   });
 
