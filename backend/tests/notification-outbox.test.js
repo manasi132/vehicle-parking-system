@@ -3,7 +3,8 @@ const mongoose = require('mongoose');
 const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const Notification = require('../src/models/Notification');
 const Reservation = require('../src/models/Reservation');
-const { notifyReservation, processPendingNotifications, reconcileBookingNotifications } = require('../src/services/notifications');
+const Payment = require('../src/models/Payment');
+const { notifyReservation, processPendingNotifications, reconcileBookingNotifications, reconcilePaymentNotifications } = require('../src/services/notifications');
 
 jest.setTimeout(30000);
 let mongo;
@@ -15,8 +16,16 @@ beforeAll(async () => {
   if (mongoose.connection.name !== 'vps_test') { await mongoose.disconnect(); throw new Error('Dedicated vps_test database required'); }
   await Notification.init();
   await Reservation.init();
+  await Payment.init();
 });
-afterEach(async () => { delete global.vpsNotificationDelivery; await Notification.deleteMany({ _id: { $in: ids } }); ids.length = 0; });
+afterEach(async () => {
+  delete global.vpsNotificationDelivery;
+  await Promise.all([
+    Notification.deleteMany({ _id: { $in: ids } }),
+    Payment.deleteMany({ _id: { $in: ids } })
+  ]);
+  ids.length = 0;
+});
 afterAll(async () => { await mongoose.disconnect(); if (mongo) await mongo.stop(); });
 async function waitFor(predicate) {
   const until = Date.now() + 5000;
@@ -63,4 +72,44 @@ test('reconciles a booking marker left by a process crash without enqueuing dupl
     expect(received.filter(key => key === eventId)).toHaveLength(1);
     expect((await Reservation.findById(document._id).lean()).pendingNotifications).toEqual([]);
   } finally { await Reservation.deleteOne({ _id: document._id }); }
+});
+
+
+test('payment notification marker is reconciled into a durable outbox event after a process restart', async () => {
+  const previousEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'test';
+  const reservation = await Reservation.create({
+    user: new mongoose.Types.ObjectId(),
+    lot: new mongoose.Types.ObjectId(),
+    slot: new mongoose.Types.ObjectId(),
+    startTime: new Date(Date.now() - 3600000),
+    endTime: new Date(Date.now()),
+    status: 'completed'
+  });
+  const id = String(reservation._id);
+  ids.push(id);
+  await Payment.create({
+    _id: id,
+    payment: {
+      transactionId: 'pi-outbox-' + id,
+      amountMinor: 1250,
+      currency: 'inr',
+      paidAt: new Date().toISOString()
+    },
+    pendingNotifications: ['PAYMENT']
+  });
+  global.vpsNotificationDelivery = async () => {};
+
+  try {
+    await reconcilePaymentNotifications();
+    await waitFor(async () => (await Notification.findById('PAYMENT:' + id).lean())?.state === 'delivered');
+    const stored = await Payment.findById(id).lean();
+    expect(stored.pendingNotifications).toEqual([]);
+    expect(await Notification.countDocuments({ _id: 'PAYMENT:' + id })).toBe(1);
+    await reconcilePaymentNotifications();
+    expect(await Notification.countDocuments({ _id: 'PAYMENT:' + id })).toBe(1);
+  } finally {
+    await Reservation.deleteOne({ _id: reservation._id });
+    process.env.NODE_ENV = previousEnv;
+  }
 });
