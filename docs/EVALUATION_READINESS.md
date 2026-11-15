@@ -1,60 +1,62 @@
 # Mini-Project Evaluation Readiness
 
 Assessment date: 15-Nov-2026
-Evidence branch: feat/manasi-sprint2-acceptance-hardening
-Evidence commit: 02fd555615b6e7ec81264dde1be98417e72e3fa9
+Evidence branch: `feat/manasi-sprint2-acceptance-hardening`
+Evidence commit when this checklist was refreshed: `c2fb50d43a9c5f7de0205294b197d191dd7103a7`
 
-This tracker distinguishes repository evidence from human or deployment acceptance. A passing GitHub workflow does not constitute UAT, a live provider test, a deployed TLS test, or a signed final approval.
+This tracker separates repository/CI evidence from live deployment acceptance and human sign-off. A green workflow does not by itself prove UAT, live provider delivery, a trusted deployed certificate, accessibility conformance, monthly uptime, or signed approval.
 
 ## Part 1 — Requirements and design
 
-| Evaluator criterion | Status | Evidence / action |
+| Evaluator criterion | Status | Evidence / remaining action |
 |---|---|---|
-| SRS introduction/descriptive sections | Present | Existing SRS includes purpose, scope, perspective, users, operating environment, interfaces and features. |
+| SRS descriptive sections and scope | Present | SRS Revision 1.1 is committed under `docs/`; review candidate. |
 | Functional and measurable non-functional requirements | Present | SRS lists 26 FRs and five NFRs. |
-| UML use-case diagram | Present | Two use-case diagrams in SRS. |
-| Security objectives and requirements | Present | Three objectives and five security requirements. |
-| Complete SRS traceability | Updated review candidate | SRS Revision 1.1 expands the RTM to 36 FR/NFR/security mappings. Team/course coordinator approval is pending. |
-| Test Plan sections 3, 4, 5, 5.1 | Present | Feature scope, exclusions, strategy and security validation are included. |
-| Test cases covering FRs and NFRs | Partial | Original mappings plus Sprint 2 addendum; deployed/system/UAT cases remain to execute. |
-| SAD architecture and component descriptions | Present in addendum | As-built supplement documents React, Express, MongoDB, Stripe, notification worker, SSE and Nginx. Reconcile with original SAD. |
-| Architectural pattern/security architecture | Present in addendum | Modular monolith/layered REST and security controls documented. |
-| Two UML sequence diagrams | Present in addendum | Reservation and payment/receipt flows included with known limitations. |
-| API design/error handling | Present in addendum | API catalogue and error protocol included. |
+| UML use-case diagrams | Present | Two diagrams in the SRS. |
+| Security objectives and requirements | Present | Three objectives and five security requirements in the SRS. |
+| Requirements traceability | Prepared | RTM covers functional, non-functional and security requirements. Team must verify ownership and traceability against the final approved SRS. |
+| Test Plan sections 3, 4, 5 and 5.1 | Present | Test Plan Revision 1.1 is committed under `docs/`; team approval remains outstanding. |
+| Test cases mapped to requirements | Partial | Original Test Plan plus Sprint 2 addendum. Not-run deployment, UAT, performance and accessibility scenarios still need execution. |
+| SAD architecture and component descriptions | Prepared | SAD As-Built Addendum is committed under `docs/`; reconcile and approve against the original SAD. |
+| Sequence diagrams and API/error protocol | Prepared | Included in the as-built addendum and diagrams; reviewer/team approval pending. |
 
-## Part 2 — Agile and repository setup
+## Part 2 — Agile, branches and evidence
 
-| Criterion | Status | Evidence / action |
+| Criterion | Status | Evidence / remaining action |
 |---|---|---|
-| Backlog items from SRS | Present | GitHub issues and source CSV exist. |
-| Story points assigned | Partial | Points added to issues #26–34 from direct source mappings. New combined UI issues #35–39 require team estimation; no estimate invented. |
-| Stories assigned to members | Present | Issue records show member assignments. |
-| GitHub Project linked with Sprint 1/2 columns | Needs team action | Sprint labels exist; linked GitHub Project board could not be verified with the available repository connection. |
-| GitHub Actions | Present | Root, backend and frontend workflows enabled. Root/backend coverage artifacts are now configured. |
-| PRs raised by assigned members | Present | Team PR history contains member-specific work. |
-| Formal repository-owner review records | Needs team action | No submitted formal review object was verified for PRs #10, #14, #17–20, #40–42. Do not fabricate reviews. |
-| Sprint 1 one-minute video | Missing | Record actual product and upload docs/demo/sprint1-demo.mp4. |
-| Sprint 2 two-minute video | Missing | Record after the team accepts the demo build and upload docs/demo/sprint2-demo.mp4. |
-| Sprint 2 officially frozen | Not ready | PR #40 remains open; known acceptance defects remain. |
+| Backlog and member PR history | Present | GitHub issues and member-specific PRs are available in repository history. |
+| Story points | Partial | Source-mapped points were added to issues #26–34. Issues #35–39 need team grooming and estimates; no estimates are invented here. |
+| GitHub Projects board | Needs team verification | Repository connection cannot verify the linked board, columns, sprint dates and issue movement. |
+| CI workflows | Passed on current feature commit | Root, backend and frontend workflows have been run; latest run details are in `TEST_EXECUTION_SUMMARY.md`. |
+| PR #43 — consistency correction | Merged into feature branch | Squash-merged 15-Nov-2026 as `65a2a27b08d90deb97e9dc49eee641f5b73601a7`. It is not a merge to `main`. |
+| PR #40 — Sprint 2 to main | Open; independent review pending | Reviewers `manaviarya13` and `bmeghana-14` are requested. No submitted review objects were found when this checklist was refreshed. |
+| Sprint 1 demo video | Not supplied | Team must record the actual application walkthrough (60 seconds) and add `docs/demo/sprint1-demo.mp4`. |
+| Sprint 2 demo video | Not supplied | Team must record the actual accepted application walkthrough (120 seconds) and add `docs/demo/sprint2-demo.mp4`. |
+| Sprint freeze | Not yet accepted | Complete review, manual UAT, recordings and sign-offs before declaring the sprint frozen. |
 
 ## Part 3 — Testing and quality
 
-| Criterion | Status | Evidence / action |
+| Criterion | Status | Evidence / remaining action |
 |---|---|---|
-| Original cases updated for Sprint 2 | Updated candidate | Test Plan Revision 1.1 and Sprint 2 addendum. |
-| Backend automated tests | Passed at recorded commit | 11 suites / 58 tests passed in run 43713544571. |
-| Frontend tests/build | Passed at recorded commit | 3 files / 14 tests and Vite production build passed in run 43713544567. |
-| Root tests | Passed at recorded commit | Two tests passed in run 43713544612. |
-| Nginx syntax | Passed | CI ephemeral certificate syntax test; not a deployed TLS handshake. |
-| System/UAT | Partial | Scenarios documented; signed UAT result missing. |
-| Code/branch coverage | Generated | Root: 97.96% line / 88.82% branch / 95.00% functions. Backend: 73.98% line / 59.91% branch / 67.60% statements / 63.79% functions. Artifacts are attached to runs 43713544612 (ID 14161786738) and 43713544571 (ID 14161786905). Frontend source coverage is not collected. |
-| Performance | Partial | Local JMeter tests exist; 500-user results variable and some low p90 results used test-only keep-alive override. |
-| Security | Partial | ZAP run was passive and local only; active/deployed security validation remains. |
-| Audit atomicity | Open failure | Lot mutation can persist when audit write fails. Intentionally not changed here. |
-| Booking-lock fencing | Open failure | Stale worker can persist reservation after losing lease. Intentionally not changed here. |
+| Backend automated tests | Passed | 11 suites / 62 tests; see current backend run in `TEST_EXECUTION_SUMMARY.md`. |
+| Root Node automated tests | Passed | 28 tests / 0 failures; root coverage artifact attached to current root run. |
+| Frontend tests and production build | Passed | 3 test files / 14 tests; Vite production build passed. |
+| Nginx configuration syntax | Passed | CI validates syntax with an ephemeral self-signed certificate. This is not proof of a real deployed hostname, certificate trust or TLS handshake. |
+| Admin audit atomicity | Fixed and regression-tested | Business mutation and audit insert share a transaction; injected audit insert failures roll back lot, pricing, attendant and gate-tracking changes. |
+| Stale booking-lock fencing | Fixed and regression-tested | Transactional fencing token check rejects a stale lock holder; takeover test proves stale writes do not commit. |
+| Live system/UAT | Not run / not signed | Team must execute scenarios on the accepted application and fill the UAT/sign-off sheet with actual results and tester details. |
+| Stripe live test-mode transaction | Pending | Automated adapter/service tests use synthetic provider responses. A real Stripe test account/key and client-generated test token are required for an actual charge/refund. |
+| Reservation notification crash recovery | Partial | Notifications are scheduled after transaction commit. A process crash between commit and enqueue can still lose an entry/exit event; durable transactional outbox coupling remains future work. |
+| Realtime event durability | Partial | Events are published after commit; the slot state itself is transactional, but publication is not in the same durable outbox. Cross-worker relay is tested with a replica set; deployment topology must be verified. |
+| Performance | Partial | Local JMeter runs exist, but representative production-like 500-user acceptance with normal proxy/keep-alive settings and repeatable p90 evidence is pending. |
+| Security | Partial | Passive/local ZAP baseline and automated security tests exist. Active/deployed penetration testing and final environment review are pending. |
+| TLS deployment | Pending | Real hostname, trusted certificate/full chain, renewal and external handshake checks are not supplied. |
+| Accessibility | Pending | Formal axe/WCAG, keyboard-only and screen-reader evidence not supplied. |
+| Report date-range accuracy | Pending | Add seeded records inside/outside the requested range and record the actual comparison; include wrong-role denial. |
+| Monthly availability | Pending | 99.5% uptime is an operational monthly measurement, not something CI can establish. |
 
-## Part 4 — Final evaluation
+## Part 4 — Final acceptance
 
-Core code and CI evidence exist, but integrated demo, deployment/UAT acceptance, formal reviews, actual video recordings and approval are not complete. Team members should rehearse their actual PRs and be prepared to explain the documented deviations and known limitations.
+The repository now has passing automated root/backend/frontend checks and the two identified consistency defects have been corrected. The project is **not yet formally accepted**: the open PR #40 needs independent review, and UAT, actual demo recordings, final document approvals and real deployment/provider evidence remain outstanding.
 
-Do not mark the project frozen or accepted while the two recorded consistency defects remain open.
+Use `docs/ACCEPTANCE_HANDOFF.md` as the remaining-work checklist. Do not turn a pending/not-run item into a pass without recording the actual tester, environment, commit, result and redacted evidence.
