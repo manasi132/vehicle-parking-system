@@ -1,6 +1,6 @@
 const crypto = require('node:crypto');
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const Notification = require('../src/models/Notification');
 const Reservation = require('../src/models/Reservation');
 const { notifyReservation, processPendingNotifications, reconcileBookingNotifications } = require('../src/services/notifications');
@@ -10,7 +10,7 @@ let mongo;
 const ids = [];
 beforeAll(async () => {
   let uri = process.env.MONGODB_TEST_URI;
-  if (!uri) { mongo = await MongoMemoryServer.create({ instance: { dbName: 'vps_test' } }); uri = mongo.getUri('vps_test'); }
+  if (!uri) { mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 }, instance: { dbName: 'vps_test' } }); uri = mongo.getUri('vps_test'); }
   await mongoose.connect(uri);
   if (mongoose.connection.name !== 'vps_test') { await mongoose.disconnect(); throw new Error('Dedicated vps_test database required'); }
   await Notification.init();

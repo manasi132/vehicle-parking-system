@@ -97,10 +97,10 @@ async function createLot(req, res) {
   const cleaned = cleanLotInput(req.body, false);
   if (cleaned.error) return res.status(400).json({ message: cleaned.error });
 
-  const lot = await ParkingLot.create({
+  const [lot] = await ParkingLot.create([{
     ...cleaned.value,
     createdBy: req.user.id
-  });
+  }], { session: req.auditContext && req.auditContext.session });
   return res.status(201).json({ message: 'Parking lot created.', lot });
 }
 
@@ -114,7 +114,7 @@ async function updateLot(req, res) {
   const lot = await ParkingLot.findOneAndUpdate(
     { _id: req.params.lotId, isActive: true },
     { $set: cleaned.value },
-    { new: true, runValidators: true }
+    { new: true, runValidators: true, session: req.auditContext && req.auditContext.session }
   );
   if (!lot) return res.status(404).json({ message: 'Active parking lot not found.' });
   return res.status(200).json({ message: 'Parking lot updated.', lot });
@@ -127,7 +127,7 @@ async function deactivateLot(req, res) {
   const lot = await ParkingLot.findOneAndUpdate(
     { _id: req.params.lotId, isActive: true },
     { $set: { isActive: false } },
-    { new: true }
+    { new: true, session: req.auditContext && req.auditContext.session }
   );
   if (!lot) return res.status(404).json({ message: 'Active parking lot not found.' });
   return res.status(200).json({ message: 'Parking lot deactivated.', lot });
@@ -172,7 +172,8 @@ async function bulkCreateSlots(req, res) {
   if (!isValidObjectId(req.params.lotId)) {
     return res.status(400).json({ message: 'Invalid parking lot ID.' });
   }
-  const lot = await ParkingLot.findOne({ _id: req.params.lotId, isActive: true }).select('_id');
+  const session = req.auditContext && req.auditContext.session;
+  const lot = await ParkingLot.findOne({ _id: req.params.lotId, isActive: true }).select('_id').session(session);
   if (!lot) return res.status(404).json({ message: 'Active parking lot not found.' });
 
   const parsed = makeSlotNumbers(req.body);
@@ -181,7 +182,7 @@ async function bulkCreateSlots(req, res) {
   const existing = await ParkingSlot.find({
     lot: lot._id,
     slotNumber: { $in: parsed.value }
-  }).select('slotNumber').lean();
+  }).select('slotNumber').session(session).lean();
 
   if (existing.length > 0) {
     return res.status(409).json({
@@ -197,7 +198,7 @@ async function bulkCreateSlots(req, res) {
         slotNumber,
         status: 'available'
       })),
-      { ordered: true }
+      { ordered: true, session }
     );
     return res.status(201).json({
       message: 'Parking slots created.',

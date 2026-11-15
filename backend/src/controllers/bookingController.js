@@ -243,11 +243,11 @@ async function createReservation(req, res) {
     });
   }
 
-  const result = await withSlotLock(slotId, async () => {
-    const slot = await ParkingSlot.findById(slotId).lean();
+  const result = await withSlotLock(slotId, async ({ session }) => {
+    const slot = await ParkingSlot.findById(slotId).session(session).lean();
     if (!slot) return { status: 404, message: 'Parking slot not found.' };
 
-    const lot = await ParkingLot.findOne({ _id: slot.lot, isActive: true }).select('_id');
+    const lot = await ParkingLot.findOne({ _id: slot.lot, isActive: true }).select('_id').session(session);
     if (!lot) return { status: 404, message: 'Active parking lot not found.' };
     if (slot.status === 'maintenance') return { status: 409, message: 'This parking slot is under maintenance.' };
     const conflict = await Reservation.findOne({
@@ -255,12 +255,12 @@ async function createReservation(req, res) {
       status: { $in: ACTIVE_RESERVATION_STATUSES },
       startTime: { $lt: window.end },
       endTime: { $gt: window.start }
-    }).select('_id');
+    }).select('_id').session(session);
     if (conflict) {
       return { status: 409, message: 'This parking slot is already reserved for an overlapping time window.' };
     }
 
-    const reservation = await Reservation.create({
+    const [reservation] = await Reservation.create([{
       user: req.user.id,
       lot: lot._id,
       slot: slot._id,
@@ -269,7 +269,7 @@ async function createReservation(req, res) {
       status: 'confirmed',
       vehicleRegistration,
       pendingNotifications: ['BOOKING']
-    });
+    }], { session });
     return { reservation };
   });
 
@@ -322,9 +322,9 @@ async function cancelReservation(req, res) {
     }
     let updated = reservation;
     if (!recovery) {
-      updated = await withSlotLock(String(snapshot.slot), async () => Reservation.findOneAndUpdate(
+      updated = await withSlotLock(String(snapshot.slot), async ({ session }) => Reservation.findOneAndUpdate(
         { _id: reservation._id, user: req.user.id, status: 'confirmed', startTime: { $gt: new Date() } },
-        { $set: { status: 'cancelled', cancelledAt: new Date() } }, { new: true }
+        { $set: { status: 'cancelled', cancelledAt: new Date() } }, { new: true, session }
       ));
       if (!updated) return { status: 409, message: 'Reservation state changed; refresh and retry.' };
       emitSlotUpdate({ slotId: String(updated.slot), lotId: String(updated.lot), status: 'available', reservationId: String(updated._id), updatedAt: updated.cancelledAt.toISOString() });

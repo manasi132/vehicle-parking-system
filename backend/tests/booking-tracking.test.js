@@ -16,6 +16,7 @@ const VehicleEntry = require('../src/models/VehicleEntry');
 const TrackingAlert = require('../src/models/TrackingAlert');
 const SlotLock = require('../src/models/SlotLock');
 const AuditLog = require('../src/models/AuditLog');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const { subscribeSlotUpdates } = require('../src/utils/realtime');
 
 let mongo;
@@ -28,7 +29,8 @@ beforeAll(async () => {
       throw new Error('MONGODB_TEST_URI must point to a dedicated database named vps_test.');
     }
   } else {
-    throw new Error('MONGODB_TEST_URI is required. Refusing to use an in-memory database.');
+    mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 }, instance: { dbName: 'vps_test' } });
+    await mongoose.connect(mongo.getUri('vps_test'));
   }
   await Promise.all([
     User.init(),

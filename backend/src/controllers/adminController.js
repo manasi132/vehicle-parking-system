@@ -29,7 +29,7 @@ async function setLotPricing(req, res) {
   const lot = await ParkingLot.findOneAndUpdate(
     { _id: lotId, isActive: true },
     { $set: { hourlyRate, peakPricing } },
-    { new: true, runValidators: true }
+    { new: true, runValidators: true, session: req.auditContext && req.auditContext.session }
   ).select('name hourlyRate peakPricing');
   if (!lot) return res.status(404).json({ message: 'Active parking lot not found.' });
   return res.status(200).json({ message: 'Pricing rules saved.', lot });
@@ -70,16 +70,17 @@ async function createAttendant(req, res) {
   const query = [];
   if (email) query.push({ email });
   if (phone) query.push({ phone });
-  if (await User.findOne({ $or: query }).select('_id')) {
+  const session = req.auditContext && req.auditContext.session;
+  if (await User.findOne({ $or: query }).select('_id').session(session)) {
     return res.status(409).json({ message: 'An account with that email or phone already exists.' });
   }
   try {
-    const user = await User.create({
+    const [user] = await User.create([{
       name, ...(email ? { email } : {}), ...(phone ? { phone } : {}),
       passwordHash: await bcrypt.hash(temporaryPassword, 12),
       role: 'attendant',
       isActive: true
-    });
+    }], { session });
     return res.status(201).json({
       message: 'Attendant account created. Share the temporary password securely and require a password change through your operational process.',
       user: publicUser(user),

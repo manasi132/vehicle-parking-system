@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const app = require('../src/app');
 const User = require('../src/models/User');
 const ParkingLot = require('../src/models/ParkingLot');
@@ -29,7 +29,7 @@ beforeAll(async () => {
       throw new Error('MONGODB_TEST_URI must point to the dedicated vps_test database.');
     }
   } else {
-    mongo = await MongoMemoryServer.create({ instance: { dbName: 'vps_test' } });
+    mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 }, instance: { dbName: 'vps_test' } });
     await mongoose.connect(mongo.getUri('vps_test'));
   }
   await Promise.all([
@@ -393,4 +393,74 @@ describe('Manasi Sprint 2 acceptance coverage', () => {
     expect(response.body.logs[0].actor.email).toBe('full-audit-admin@example.com');
     expect(response.body.logs.at(-1).action).toBe('lot.create');
   });
+
+  test('rolls back lot creation when the audit insert fails', async () => {
+    const { user, token } = await createUser({ role: 'admin', email: 'atomic-lot-admin@example.com' });
+    const auditFailure = jest.spyOn(AuditLog, 'create').mockRejectedValue(new Error('simulated audit storage failure'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await request(app).post('/api/lots')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ name: 'Must Roll Back Lot', address: '10 Atomicity Road', city: 'Bengaluru' });
+
+    expect(response.status).toBe(500);
+    expect(await ParkingLot.countDocuments({ name: 'Must Roll Back Lot' })).toBe(0);
+    expect(await AuditLog.countDocuments({})).toBe(0);
+    auditFailure.mockRestore();
+  });
+
+  test('rolls back pricing and attendant mutations when their audit insert fails', async () => {
+    const { user, token } = await createUser({ role: 'admin', email: 'atomic-admin@example.com' });
+    const lot = await createLot(user._id, 'Atomic Pricing Lot');
+
+    let auditFailure = jest.spyOn(AuditLog, 'create').mockRejectedValue(new Error('simulated audit storage failure'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const pricing = await request(app).post('/api/admin/lots/' + lot._id + '/pricing')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ hourlyRate: 99 });
+    expect(pricing.status).toBe(500);
+    expect((await ParkingLot.findById(lot._id).lean()).hourlyRate).toBe(20);
+    expect(await AuditLog.countDocuments({})).toBe(0);
+    auditFailure.mockRestore();
+
+    auditFailure = jest.spyOn(AuditLog, 'create').mockRejectedValue(new Error('simulated audit storage failure'));
+    const attendant = await request(app).post('/api/admin/attendants')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ name: 'Must Roll Back Attendant', email: 'must-rollback@example.com' });
+    expect(attendant.status).toBe(500);
+    expect(await User.countDocuments({ email: 'must-rollback@example.com' })).toBe(0);
+    expect(await AuditLog.countDocuments({})).toBe(0);
+    auditFailure.mockRestore();
+  });
+
+  test('rolls back slot, reservation and vehicle-entry changes when gate-entry audit fails', async () => {
+    const { user, token } = await createUser({ role: 'admin', email: 'atomic-gate-admin@example.com' });
+    const lot = await createLot(user._id, 'Atomic Gate Lot');
+    const slot = await ParkingSlot.create({ lot: lot._id, slotNumber: 'ATOMIC-01', status: 'available' });
+    const now = Date.now();
+    const reservation = await Reservation.create({
+      user: user._id,
+      lot: lot._id,
+      slot: slot._id,
+      startTime: new Date(now - 60_000),
+      endTime: new Date(now + 60 * 60_000),
+      vehicleRegistration: 'KA09AT1234',
+      status: 'confirmed'
+    });
+
+    const auditFailure = jest.spyOn(AuditLog, 'create').mockRejectedValue(new Error('simulated audit storage failure'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const response = await request(app).post('/api/tracking/entry')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ reservationId: String(reservation._id), vehicleNumber: 'KA09AT1234', gate: 'atomic-gate' });
+
+    expect(response.status).toBe(500);
+    expect((await ParkingSlot.findById(slot._id)).status).toBe('available');
+    expect((await Reservation.findById(reservation._id)).status).toBe('confirmed');
+    expect(await VehicleEntry.countDocuments({ reservation: reservation._id })).toBe(0);
+    expect(await AuditLog.countDocuments({})).toBe(0);
+    expect(await SlotLock.countDocuments({ _id: String(slot._id) })).toBe(0);
+    auditFailure.mockRestore();
+  });
+
 });
