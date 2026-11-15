@@ -18,7 +18,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Run root Node tests with coverage
+        shell: bash
         run: |
+          set -o pipefail
           mkdir -p docs/coverage
           node --experimental-test-coverage --test test/*.test.js 2>&1 | tee docs/coverage/root-node-coverage.txt
       - name: Upload root coverage
