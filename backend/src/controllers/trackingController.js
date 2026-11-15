@@ -19,6 +19,11 @@ function afterCommit(req, callback) {
   if (req.auditContext) req.auditContext.afterCommit.push(callback);
   else return callback();
 }
+function trackingConflict(message) {
+  const error = new Error(message);
+  error.code = 'TRACKING_STATE_CONFLICT';
+  return error;
+}
 function activeAt(reservation, now) {
   return reservation && reservation.status === 'confirmed' && reservation.startTime <= now && reservation.endTime > now;
 }
@@ -41,7 +46,9 @@ async function recordEntry(req, res) {
     const alert = await createAlert(req, reservationId, vehicleRegistration, 'Entry attempted for an unknown reservation.', gate);
     return res.status(409).json({ message: 'No active reservation matches this vehicle entry.', alertId: alert._id.toString() });
   }
-  const result = await withSlotLock(String(firstLookup.slot), async ({ session }) => {
+  let result;
+  try {
+    result = await withSlotLock(String(firstLookup.slot), async ({ session }) => {
     const reservation = await Reservation.findById(reservationId).session(session);
     const now = new Date();
     if (!activeAt(reservation, now)) return { error: 'Reservation is not active for entry.' };
@@ -60,7 +67,7 @@ async function recordEntry(req, res) {
       { new: true, session }
     );
     if (!updatedReservation) {
-      return { error: 'Reservation was already used or changed.' };
+      throw trackingConflict('Reservation was already used or changed.');
     }
     const [entry] = await VehicleEntry.create([{
         reservation: reservation._id, lot: reservation.lot, slot: reservation.slot,
@@ -68,7 +75,12 @@ async function recordEntry(req, res) {
         status: 'entered', entryAt: now
       }], { session });
       return { entry, reservation: updatedReservation };
-  }, { transactionContext: req.auditContext });
+    }, { transactionContext: req.auditContext });
+  } catch (error) {
+    if (error.code !== 'TRACKING_STATE_CONFLICT') throw error;
+    const alert = await createAlert(req, reservationId, vehicleRegistration, error.message, gate);
+    return res.status(409).json({ message: error.message, alertId: alert._id.toString() });
+  }
   if (result.error) {
     const alert = await createAlert(req, reservationId, vehicleRegistration, result.error, gate);
     return res.status(409).json({ message: result.error, alertId: alert._id.toString() });
@@ -95,7 +107,9 @@ async function recordExit(req, res) {
     const alert = await createAlert(req, reservationId, vehicleRegistration, 'Exit attempted without a matching active entry.', gate, 'EXIT_REJECTED');
     return res.status(404).json({ message: 'No active vehicle entry matches this reservation.', alertId: alert._id.toString() });
   }
-  const result = await withSlotLock(String(initialEntry.slot), async ({ session }) => {
+  let result;
+  try {
+    result = await withSlotLock(String(initialEntry.slot), async ({ session }) => {
     const entry = await VehicleEntry.findOne({ reservation: reservationId, status: 'entered' }).session(session);
     const reservation = await Reservation.findById(reservationId).session(session);
     if (!entry || !reservation || reservation.status !== 'checked_in') return { status: 404, error: 'No active vehicle entry matches this reservation.' };
@@ -113,7 +127,7 @@ async function recordExit(req, res) {
       { new: true, session }
     );
     if (!updatedReservation) {
-      return { error: 'Reservation state changed; retry after refreshing.' };
+      throw trackingConflict('Reservation state changed; retry after refreshing.');
     }
     const slot = await ParkingSlot.findOneAndUpdate(
       { _id: reservation.slot, status: 'occupied' },
@@ -121,10 +135,15 @@ async function recordExit(req, res) {
       { new: true, session }
     );
     if (!slot) {
-      return { error: 'The occupied slot state changed; retry after refreshing.' };
+      throw trackingConflict('The occupied slot state changed; retry after refreshing.');
     }
     return { entry: updatedEntry, reservation: updatedReservation };
-  }, { transactionContext: req.auditContext });
+    }, { transactionContext: req.auditContext });
+  } catch (error) {
+    if (error.code !== 'TRACKING_STATE_CONFLICT') throw error;
+    const alert = await createAlert(req, reservationId, vehicleRegistration, error.message, gate, 'EXIT_REJECTED');
+    return res.status(409).json({ message: error.message, alertId: alert._id.toString() });
+  }
   if (result.error) {
     const alert = await createAlert(req, reservationId, vehicleRegistration, result.error, gate, 'EXIT_REJECTED');
     return res.status(result.status || 409).json({ message: result.error, alertId: alert._id.toString() });
