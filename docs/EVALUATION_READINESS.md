@@ -46,7 +46,7 @@ This tracker distinguishes repository evidence from human or deployment acceptan
 | Root tests | Passed at recorded commit | Two tests passed in run 43704031881. |
 | Nginx syntax | Passed | CI ephemeral certificate syntax test; not a deployed TLS handshake. |
 | System/UAT | Partial | Scenarios documented; signed UAT result missing. |
-| Code/branch coverage | Awaiting new workflow run | Root Node coverage and backend Jest coverage artifacts configured. Record actual percentages only after CI completes. |
+| Code/branch coverage | Generated | Root: 97.96% line / 88.82% branch. Backend: 73.98% line / 59.91% branch. Artifacts are attached to runs 43712409617 and 43712409564. Frontend source coverage is not collected. |
 | Performance | Partial | Local JMeter tests exist; 500-user results variable and some low p90 results used test-only keep-alive override. |
 | Security | Partial | ZAP run was passive and local only; active/deployed security validation remains. |
 | Audit atomicity | Open failure | Lot mutation can persist when audit write fails. Intentionally not changed here. |
