@@ -1,0 +1,1 @@
+Actual demo videos are not included because they must be screen-recorded from the running application by the team. Record and place: sprint1-demo.mp4 (60 seconds) and sprint2-demo.mp4 (120 seconds). Shot lists are in docs/DESIGN_DEVIATIONS_AND_DEMO.md in the GitHub branch.

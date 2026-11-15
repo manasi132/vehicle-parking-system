@@ -1,0 +1,297 @@
+﻿Summary,Work Type,Description,Priority,Story point estimate,Assignee,Labels
+Register with email/phone and password,Story,"As a driver, I want to register with my name, email/phone and password so that I can book parking.
+
+Acceptance criteria: Valid data creates the account (201); password stored only as a bcrypt hash; duplicate email/phone returns 409; weak/missing fields return 400.
+
+SRS ref: VPS-F-001; VPS-SR-002
+
+SRS reference: VPS-F-001; VPS-SR-002
+Planned sprint: Sprint 1",Medium,3,Manasi,"auth,sprint-1"
+Log in and receive a JWT session,Story,"As a registered user, I want to log in with my credentials so that I get an authenticated session.
+
+Acceptance criteria: Correct credentials return a JWT (2h) and the role; wrong credentials return 401 without revealing which field was wrong.
+
+SRS ref: VPS-F-002
+
+SRS reference: VPS-F-002
+Planned sprint: Sprint 1",Medium,3,Manasi,"auth,sprint-1"
+"Role-based access for driver, attendant and admin",Story,"As a driver, attendant or administrator, I want to see only the functions for my role so that restricted actions stay protected.
+
+Acceptance criteria: JWT carries the role; admin-only routes return 403 for other roles; login response lets the UI open the right dashboard.
+
+SRS ref: VPS-F-005; VPS-SR-003
+
+SRS reference: VPS-F-005; VPS-SR-003
+Planned sprint: Sprint 1",Medium,5,Manasi,"auth,sprint-1"
+Create and manage parking lots and slots,Story,"As an administrator, I want to create, update and deactivate lots and add slots so that drivers have slots to reserve.
+
+Acceptance criteria: Admin can create/update/deactivate a lot and bulk-create slots; non-admin gets 403; slots start as 'available'.
+
+SRS ref: VPS-F-040
+
+SRS reference: VPS-F-040
+Planned sprint: Sprint 1",Medium,5,Manasi,"admin,sprint-1"
+Reset password with OTP,Story,"As a user who forgot my password, I want to reset it with an OTP so that I can regain access.
+
+Acceptance criteria: OTP is valid for 10 minutes and stored hashed; wrong/expired OTP returns 400; response never reveals whether the account exists.
+
+SRS ref: VPS-F-003
+
+SRS reference: VPS-F-003
+Planned sprint: Sprint 2",Medium,3,Manasi,"auth,sprint-2"
+Lock account after 5 failed logins,Story,"As the system owner, I want accounts locked after repeated failures so that brute-force attacks are blocked.
+
+Acceptance criteria: After 5 consecutive failures the account is locked for 15 minutes (HTTP 423), even with the correct password; counter resets on success.
+
+SRS ref: VPS-F-004
+
+SRS reference: VPS-F-004
+Planned sprint: Sprint 2",Medium,2,Manasi,"auth,sprint-2"
+Configure pricing rules,Story,"As an administrator, I want to set hourly and peak pricing for a lot so that fees reflect demand.
+
+Acceptance criteria: Rate must be > 0; pricing saved on the lot; fee calculation uses the saved rule.
+
+SRS ref: VPS-F-041
+
+SRS reference: VPS-F-041
+Planned sprint: Sprint 2",Medium,3,Manasi,"admin,sprint-2"
+Live occupancy dashboard data,Story,"As an administrator, I want to see available/occupied/maintenance counts per lot so that I can monitor usage.
+
+Acceptance criteria: Endpoint returns counts that match the slot collection; updates after entry/exit events.
+
+SRS ref: VPS-F-042
+
+SRS reference: VPS-F-042
+Planned sprint: Sprint 2",Medium,5,Manasi,"admin,sprint-2"
+Manage attendant accounts,Story,"As an administrator, I want to create attendant accounts so that on-site staff can operate the gate kiosk.
+
+Acceptance criteria: Admin can create an attendant with a temporary password; the account has role 'attendant' only.
+
+SRS ref: VPS-F-043
+
+SRS reference: VPS-F-043
+Planned sprint: Sprint 2",Medium,3,Manasi,"admin,sprint-2"
+Audit log for admin actions,Story,"As an administrator, I want admin actions logged with time and actor so that changes can be traced.
+
+Acceptance criteria: Every successful admin write creates an audit entry (action, actor, target, time); request bodies and PII are not logged.
+
+SRS ref: VPS-SR-005
+
+SRS reference: VPS-SR-005
+Planned sprint: Sprint 2",Medium,3,Manasi,"security,sprint-2"
+Real-time slot availability for a lot,Story,"As a driver, I want to see which slots are free for my time window so that I can pick one.
+
+Acceptance criteria: Availability reflects confirmed reservations and maintenance slots; invalid window returns 400; reflects changes within 5 seconds.
+
+SRS ref: VPS-F-010
+
+SRS reference: VPS-F-010
+Planned sprint: Sprint 1",Medium,5,Manavi,"slots,sprint-1"
+"Search lots by location, price and availability",Story,"As a driver, I want to search and filter lots by distance, price and availability so that I find a suitable lot quickly.
+
+Acceptance criteria: Filters by max rate and available-only; results sorted by distance when coordinates are given; each lot shows available slot count.
+
+SRS ref: VPS-F-011
+
+SRS reference: VPS-F-011
+Planned sprint: Sprint 1",Medium,3,Manavi,"slots,sprint-1"
+Reserve a slot for a time window,Story,"As a driver, I want to reserve a specific slot for a date/time window so that it is held for me.
+
+Acceptance criteria: POST /api/slots/reserve returns 201 with reservationId and expiresAt; 401 if unauthenticated; 400 for invalid window.
+
+SRS ref: VPS-F-012
+
+SRS reference: VPS-F-012
+Planned sprint: Sprint 1",Medium,5,Manavi,"booking,sprint-1"
+Prevent double-booking,Story,"As a driver, I want a reserved slot to be exclusive so that nobody else can take it for my window.
+
+Acceptance criteria: Two simultaneous requests for the same slot/window: one 201, one 409; verified by an automated parallel-request test.
+
+SRS ref: VPS-F-014
+
+SRS reference: VPS-F-014
+Planned sprint: Sprint 1",Medium,5,Manavi,"booking,sprint-1"
+Log vehicle entry,Story,"As a parking attendant, I want to log a vehicle entry against its reservation so that the slot becomes occupied.
+
+Acceptance criteria: Valid vehicle/reservation marks the slot occupied and creates an entry log; unregistered vehicle returns 409 and raises an alert.
+
+SRS ref: VPS-F-020
+
+SRS reference: VPS-F-020
+Planned sprint: Sprint 1",Medium,3,Manavi,"tracking,sprint-1"
+Cancel a reservation,Story,"As a driver, I want to cancel a future reservation so that the slot is released.
+
+Acceptance criteria: Only the owner can cancel a future confirmed reservation; slot becomes available again within 1 minute; past/completed returns 409.
+
+SRS ref: VPS-F-013
+
+SRS reference: VPS-F-013
+Planned sprint: Sprint 2",Medium,2,Manavi,"booking,sprint-2"
+Log vehicle exit and duration,Story,"As a parking attendant, I want to log a vehicle exit so that the slot is freed and the stay duration is known for billing.
+
+Acceptance criteria: Exit frees the slot, completes the reservation and returns duration in minutes; vehicle not inside returns 404.
+
+SRS ref: VPS-F-021
+
+SRS reference: VPS-F-021
+Planned sprint: Sprint 2",Medium,3,Manavi,"tracking,sprint-2"
+Simulated ANPR/IoT scan trigger,Story,"As a developer without physical hardware, I want a mock scan endpoint so that entry/exit can be demonstrated as if from an ANPR camera.
+
+Acceptance criteria: Mock endpoint accepts entry/exit events with triggerSource 'ANPR_SIM' and reuses the same tracking logic; restricted to attendant/admin.
+
+SRS ref: VPS-F-022..025
+
+SRS reference: VPS-F-022..025
+Planned sprint: Sprint 2",Medium,2,Manavi,"tracking,sprint-2"
+Unauthorized-vehicle alerts,Story,"As an administrator, I want an alert when an unregistered vehicle tries to enter so that I can respond.
+
+Acceptance criteria: Each rejected entry stores an alert (type, vehicle, gate, time); alerts listed newest first.
+
+SRS ref: VPS-F-022..025
+
+SRS reference: VPS-F-022..025
+Planned sprint: Sprint 2",Medium,3,Manavi,"tracking,sprint-2"
+Real-time occupancy updates,Story,"As a driver or attendant, I want slot status to update live so that the display board and UI stay accurate.
+
+Acceptance criteria: Entry, exit and cancellation emit a 'slot:update' event received by connected clients.
+
+SRS ref: VPS-F-022..025
+
+SRS reference: VPS-F-022..025
+Planned sprint: Sprint 2",Medium,3,Manavi,"tracking,sprint-2"
+Web client shell with register and login screens,Story,"As a driver, I want clear register and login screens so that I can get started easily.
+
+Acceptance criteria: Forms validate input and show server errors; token stored and sent on requests; user is routed to the dashboard for their role.
+
+SRS ref: VPS-F-001/002/005; VPS-NF-005
+
+SRS reference: VPS-F-001/002/005; VPS-NF-005
+Planned sprint: Sprint 1",Medium,5,Meghana,"frontend,sprint-1"
+Slot search and booking UI,Story,"As a driver, I want to search lots, see free slots and reserve one so that I can book without help.
+
+Acceptance criteria: Search filters work; slot grid shows availability for the chosen window; reserve shows confirmation or the 409 message.
+
+SRS ref: VPS-F-010/011/012
+
+SRS reference: VPS-F-010/011/012
+Planned sprint: Sprint 1",Medium,5,Meghana,"frontend,sprint-1"
+Gate kiosk UI for entry and exit,Story,"As a parking attendant, I want a large-button kiosk screen so that I can log entries and exits in a few taps.
+
+Acceptance criteria: Attendant can enter vehicle number, trigger entry/exit and see success or alert messages; touch-friendly layout.
+
+SRS ref: VPS-F-020; VPS-F-005
+
+SRS reference: VPS-F-020; VPS-F-005
+Planned sprint: Sprint 1",Medium,5,Meghana,"frontend,sprint-1"
+Payment and receipt UI,Story,"As a driver, I want to pay for my parking and see a receipt so that I have proof of payment.
+
+Acceptance criteria: Shows amount due, sandbox payment flow, success/failure states and a downloadable/printable receipt.
+
+SRS ref: VPS-F-030..032
+
+SRS reference: VPS-F-030..032
+Planned sprint: Sprint 2",Medium,3,Meghana,"frontend,sprint-2"
+Admin dashboard and report screens,Story,"As an administrator, I want screens for lots, pricing, occupancy and reports so that I can manage the system without the API.
+
+Acceptance criteria: Admin can manage lots/slots/pricing and attendants, view occupancy and reports; other roles cannot open these pages.
+
+SRS ref: VPS-F-040..043; VPS-F-052
+
+SRS reference: VPS-F-040..043; VPS-F-052
+Planned sprint: Sprint 2",Medium,5,Meghana,"frontend,sprint-2"
+Status display board page,Story,"As a visitor at the lot entrance, I want a live availability board so that I know if parking is available.
+
+Acceptance criteria: Board shows available count per lot and updates on 'slot:update' events without refreshing.
+
+SRS ref: VPS-F-025
+
+SRS reference: VPS-F-025
+Planned sprint: Sprint 2",Medium,3,Meghana,"frontend,sprint-2"
+Accessibility and high-contrast mode,Story,"As a user with visual impairments, I want screen-reader friendly prompts and a high-contrast mode so that I can use the system.
+
+Acceptance criteria: Meets WCAG 2.1 AA checks in axe DevTools for main pages; high-contrast toggle works.
+
+SRS ref: VPS-NF-005
+
+SRS reference: VPS-NF-005
+Planned sprint: Sprint 2",Medium,5,Meghana,"frontend,sprint-2"
+Responsive layout polish,Story,"As a mobile user, I want pages that fit my phone so that I can book on the go.
+
+Acceptance criteria: Main flows usable at phone width without sideways scrolling.
+
+SRS ref: VPS-NF-005
+
+SRS reference: VPS-NF-005
+Planned sprint: Sprint 2",Medium,2,Meghana,"frontend,sprint-2"
+Calculate parking fee,Story,"As a driver, I want the fee calculated from my stay duration and the lot rate so that billing is correct.
+
+Acceptance criteria: Fee = duration x rate with peak multiplier; unit tests cover rounding and peak hours.
+
+SRS ref: VPS-F-030
+
+SRS reference: VPS-F-030
+Planned sprint: Sprint 1",Medium,3,Sanjana,"payment,sprint-1"
+Charge via sandbox gateway with tokenization,Story,"As a driver, I want to pay securely so that my card details are never stored by the system.
+
+Acceptance criteria: POST /api/payments/charge works in test mode using a payment token; 402 on failure, 404 for unknown reservation; no card data in DB or logs.
+
+SRS ref: VPS-F-031; VPS-SR-004
+
+SRS reference: VPS-F-031; VPS-SR-004
+Planned sprint: Sprint 1",Medium,5,Sanjana,"payment,sprint-1"
+Enforce TLS / HTTPS,Story,"As a user, I want all connections encrypted so that my data cannot be read in transit.
+
+Acceptance criteria: HTTPS enforced for the deployed API/client; HTTP is redirected or rejected; verified with a TLS check.
+
+SRS ref: VPS-SR-001
+
+SRS reference: VPS-SR-001
+Planned sprint: Sprint 1",Medium,2,Sanjana,"security,sprint-1"
+GitHub Actions CI for PRs,Story,"As a team, we want automated tests on every PR so that broken code is not merged.
+
+Acceptance criteria: Workflow runs install and npm test on pull requests to main; failing checks block merge.
+
+SRS ref: Part-2 deliverable
+
+SRS reference: Part-2 deliverable
+Planned sprint: Sprint 1",Medium,3,Sanjana,"devops,sprint-1"
+Receipts and refunds,Story,"As a driver, I want a receipt and a refund for cancelled reservations so that I am not charged unfairly.
+
+Acceptance criteria: Receipt created per successful charge; cancelling a paid future reservation triggers a sandbox refund.
+
+SRS ref: VPS-F-032
+
+SRS reference: VPS-F-032
+Planned sprint: Sprint 2",Medium,5,Sanjana,"payment,sprint-2"
+"Booking, entry, exit and payment notifications",Story,"As a driver, I want notifications for key events so that I stay informed.
+
+Acceptance criteria: Email/SMS sandbox (or logging stub) sends messages for booking, entry, exit and payment; the OTP flow uses the same service.
+
+SRS ref: VPS-F-050/051
+
+SRS reference: VPS-F-050/051
+Planned sprint: Sprint 2",Medium,5,Sanjana,"notifications,sprint-2"
+Occupancy and revenue reports,Story,"As an administrator, I want periodic occupancy and revenue reports so that I can review performance.
+
+Acceptance criteria: Report endpoint returns occupancy and revenue per lot for a date range; admin-only.
+
+SRS ref: VPS-F-052
+
+SRS reference: VPS-F-052
+Planned sprint: Sprint 2",Medium,3,Sanjana,"reports,sprint-2"
+RBAC and rate-limit security tests,Story,"As the security owner, I want automated tests for access control and rate limits so that misuse is caught.
+
+Acceptance criteria: Tests prove 403 for wrong roles and throttling on auth/booking endpoints; OWASP ZAP baseline scan result saved.
+
+SRS ref: VPS-SR-003
+
+SRS reference: VPS-SR-003
+Planned sprint: Sprint 2",Medium,3,Sanjana,"security,sprint-2"
+Performance and load test,Story,"As the team, we want to measure response time and concurrency so that we know the targets are met.
+
+Acceptance criteria: JMeter run reports p90 response time and behaviour at up to 500 concurrent users; results documented.
+
+SRS ref: VPS-NF-001; VPS-NF-003
+
+SRS reference: VPS-NF-001; VPS-NF-003
+Planned sprint: Sprint 2",Medium,5,Sanjana,"performance,sprint-2"
