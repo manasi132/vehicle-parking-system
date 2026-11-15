@@ -27,3 +27,4 @@
 .auth-tabs button[aria-selected="false"]{color:#526077}
 .optional,.s2-heading p,.s2-panel .muted{color:#526077}
 @media(max-width:760px){.app-shell,.main-panel,.sidebar{min-width:0}.sidebar{grid-template-columns:minmax(0,1fr)}.sidebar nav{min-width:0;flex-wrap:wrap;justify-content:flex-start}}
+@media(max-width:520px){.s2-row{min-width:0;grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(0,1fr));overflow-wrap:anywhere}.s2-row>*{min-width:0}}
