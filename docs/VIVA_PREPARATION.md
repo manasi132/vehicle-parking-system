@@ -21,7 +21,7 @@ PR #43 was squash-merged into Manasi's Sprint 2 feature branch on 15-Nov-2026. P
 
 **How is audit consistency handled?** An admin mutation and its AuditLog insert share one MongoDB transaction. Fault injection forces AuditLog.create to fail and then verifies the domain mutation is absent. The API returns an internal error rather than reporting a successful unaudited mutation.
 
-**What happens to notifications and realtime events?** Gate entry/exit state transitions commit first; notification scheduling and SSE publication run after commit. This avoids sending an event for a rolled-back state, but there is still a crash window before the post-commit callback enqueues the event. A durable transactional outbox for every event is future work.
+**What happens to notifications and realtime events?** Gate entry/exit notification records are inserted in the same transaction as their reservation, slot and vehicle-entry changes. If enqueue fails, the state transaction aborts. For payment, the receipt and a pending-notification marker are written atomically; a worker reconciles the marker into the deterministic outbox event after restart. The worker retries outbox delivery idempotently. SSE board publication is still post-commit and is not a durable outbox; a missed event can be recovered by refreshing the board's state.
 
 **Why Stripe PaymentIntents and tokenization?** Card data should be tokenized by the provider and must not be stored by the VPS. The backend validates intent state, amount and currency. Current scope is test mode; synthetic tests are not a live Stripe transaction.
 
@@ -31,11 +31,11 @@ PR #43 was squash-merged into Manasi's Sprint 2 feature branch on 15-Nov-2026. P
 
 **Unit vs integration vs system vs acceptance?** Unit tests isolate calculations/validators; integration tests connect routes/database/providers; system tests cover workflows; UAT is performed by driver/attendant/admin representatives and recorded with sign-off.
 
-**What do current CI results prove?** Root CI passed 28/28 tests with 97.96% line and 88.82% branch coverage; backend corrective CI passed 11 suites/62 tests with 75.35% line and 61.74% branch coverage; frontend CI passed 3 files/14 tests and production build. Nginx syntax validation used an ephemeral certificate. CI does not prove UAT, live provider, deployed TLS, full frontend coverage or production performance.
+**What do current CI results prove?** Root CI passed 28/28 tests with 97.96% line and 88.82% branch coverage; backend CI passed 11 suites/64 tests with 77.86% line and 65.16% branch coverage; frontend CI passed 3 files/14 tests and production build. Nginx syntax validation used an ephemeral certificate. CI does not prove UAT, live provider delivery, deployed TLS, full frontend coverage or production performance.
 
 **What deviations should we explain?** Simulated ANPR/IoT; SSE board; Stripe test mode; UTC peak pricing; development notification adapter; Nginx hostname placeholder; optional cross-worker change-stream relay.
 
-**What remains before final evaluation?** Independent PR #40 review, actual UAT and signatures, Sprint 1 and Sprint 2 video recordings, real Stripe test transaction, deployed TLS verification, representative performance evidence, accessibility audit, report-range acceptance and uptime reporting. Be transparent; do not claim these are complete.
+**What remains before final evaluation?** Independent PR #40 review, actual UAT and signatures, Sprint 1 and Sprint 2 video recordings, real Stripe test transaction and notification-provider delivery, deployed TLS verification, representative performance evidence, accessibility audit and uptime reporting. The report date-range logic has automated regression coverage, but its manual UAT walkthrough is still pending. Be transparent; do not claim these are complete.
 
 ## Agile/SDLC explanation
 
