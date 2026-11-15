@@ -87,7 +87,7 @@ test('payment notification marker is reconciled into a durable outbox event afte
     status: 'completed'
   });
   const id = String(reservation._id);
-  ids.push(id);
+  ids.push(id, 'PAYMENT:' + id);
   await Payment.create({
     _id: id,
     payment: {
