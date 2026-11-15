@@ -28,17 +28,6 @@ jobs:
     name: Backend tests, syntax and coverage
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --replSet rs0
-          --health-cmd "mongosh --quiet --eval 'try { if (rs.status().myState === 1) quit(0); quit(1); } catch (e) { rs.initiate({_id: \"rs0\", members: [{_id: 0, host: \"localhost:27017\"}]}); quit(1); }'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -54,8 +43,6 @@ jobs:
         run: find backend/src backend/tests -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Run backend tests with line and branch coverage
         working-directory: backend
-        env:
-          MONGODB_TEST_URI: mongodb://127.0.0.1:27017/vps_test?replicaSet=rs0
         run: npm test -- --coverage --coverageReporters=text --coverageReporters=html --coverageReporters=lcov --coverageReporters=json-summary --collectCoverageFrom='src/**/*.js'
       - name: Upload backend coverage
         if: always()
