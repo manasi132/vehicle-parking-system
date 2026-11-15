@@ -156,6 +156,49 @@ describe('Manasi Sprint 2 API stories', () => {
     expect(response.status).toBe(400);
   });
 
+  test('admin audit log limit is bounded and rejects malformed values', async () => {
+    const { token } = await createUser('admin', 'audit-limit@example.com');
+    for (const value of ['0', '101', '1.5', '-1', 'garbage']) {
+      const response = await request(app).get('/api/admin/audit-logs').query({ limit: value }).set('Authorization', 'Bearer ' + token);
+      expect(response.status).toBe(400);
+    }
+    expect((await request(app).get('/api/admin/audit-logs').query({ limit: '2' }).set('Authorization', 'Bearer ' + token)).status).toBe(200);
+  });
+
+  test('production OTP relay uses HTTPS and clears an undelivered code without revealing account existence', async () => {
+    await createUser('driver', 'relay@example.com');
+    const previous = { nodeEnv: process.env.NODE_ENV, url: process.env.PASSWORD_RESET_DELIVERY_URL, token: process.env.PASSWORD_RESET_DELIVERY_TOKEN };
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: false });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    process.env.NODE_ENV = 'production';
+    process.env.PASSWORD_RESET_DELIVERY_URL = 'https://relay.example.invalid/otp';
+    process.env.PASSWORD_RESET_DELIVERY_TOKEN = 'fixture-only-token';
+    try {
+      const existing = await request(app).post('/api/auth/password/forgot').send({ identifier: 'relay@example.com' });
+      const unknown = await request(app).post('/api/auth/password/forgot').send({ identifier: 'unknown@example.com' });
+      expect(existing.status).toBe(200); expect(unknown.body).toEqual(existing.body);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [url, options] = fetchSpy.mock.calls[0];
+      expect(url.protocol).toBe('https:'); expect(options.redirect).toBe('error');
+      expect(JSON.parse(options.body)).toMatchObject({ event: 'password_reset_otp', channel: 'email', expiresInMinutes: 10 });
+      const stored = await User.findOne({ email: 'relay@example.com' }).select('+passwordResetOtpHash +passwordResetOtpExpiresAt');
+      expect(stored.passwordResetOtpHash).toBeNull(); expect(stored.passwordResetOtpExpiresAt).toBeNull();
+      expect(errorSpy).toHaveBeenCalledWith('Password reset delivery failed.');
+    } finally {
+      process.env.NODE_ENV = previous.nodeEnv;
+      if (previous.url === undefined) delete process.env.PASSWORD_RESET_DELIVERY_URL; else process.env.PASSWORD_RESET_DELIVERY_URL = previous.url;
+      if (previous.token === undefined) delete process.env.PASSWORD_RESET_DELIVERY_TOKEN; else process.env.PASSWORD_RESET_DELIVERY_TOKEN = previous.token;
+      fetchSpy.mockRestore(); errorSpy.mockRestore();
+    }
+  });
+
+  test('rejects malformed stored OTP hashes without an internal error', async () => {
+    const { user } = await createUser('driver', 'malformed-otp@example.com');
+    await User.updateOne({ _id: user._id }, { $set: { passwordResetOtpHash: 'invalid', passwordResetOtpExpiresAt: new Date(Date.now() + 60000) } });
+    const result = await request(app).post('/api/auth/password/reset').send({ identifier: 'malformed-otp@example.com', otp: '123456', newPassword: 'New!SecurePass123' });
+    expect(result.status).toBe(400);
+  });
+
   test('admin can configure positive hourly and peak pricing; invalid zero rate is rejected', async () => {
     const { user, token } = await createUser('admin');
     const lot = await createLot(user._id);

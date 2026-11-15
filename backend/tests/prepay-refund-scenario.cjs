@@ -87,6 +87,8 @@ async function main() {
     await new Promise(resolve => setTimeout(resolve, 1100));
     assert.equal((await request(app).post('/api/tracking/exit').set('Authorization', 'Bearer ' + token(admin)).send(gate)).status, 200);
     assert.equal((await charge(activeId)).status, 200);
+    const notificationDeadline = Date.now() + 5000;
+    while (Date.now() < notificationDeadline && !['BOOKING', 'ENTRY', 'EXIT', 'PAYMENT'].every(type => delivered.some(item => item.type === type && item.reservationId === activeId))) await new Promise(resolve => setTimeout(resolve, 25));
     for (const type of ['BOOKING', 'ENTRY', 'EXIT', 'PAYMENT']) assert.ok(delivered.some(item => item.type === type && item.reservationId === activeId));
     assert.equal((await request(app).post('/api/auth/password/forgot').send({ identifier: owner.email })).status, 200);
     const otp = delivered.find(item => item.type === 'PASSWORD_RESET_OTP'); assert.ok(otp && /^\d{6}$/.test(otp.otp));
@@ -104,6 +106,7 @@ async function main() {
   } finally {
     await Payment.deleteMany({ _id: { $in: ids } }); await Reservation.deleteMany({ _id: { $in: ids } });
     delete global.vpsNotificationDelivery;
+    await require('../src/models/Notification').deleteMany({ reservationId: { $in: ids } });
     await require('../src/models/VehicleEntry').deleteMany({ reservation: { $in: ids } });
     await require('../src/models/AuditLog').deleteMany({ actor: admin._id });
     await Slot.deleteOne({ _id: slot._id }); await Lot.deleteOne({ _id: lot._id }); await User.deleteMany({ _id: { $in: [owner._id, other._id, admin._id] } });

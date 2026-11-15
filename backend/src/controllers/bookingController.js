@@ -7,7 +7,7 @@ const { normalizeVehicleRegistration } = require('../utils/vehicleRegistration')
 const { emitSlotUpdate } = require('../utils/realtime');
 const { createPaymentStore } = require('../services/paymentStore');
 const { paymentGateway } = require('../services/paymentGateway');
-const { notifyReservation } = require('../services/notifications');
+const { scheduleBookingNotification } = require('../services/notifications');
 
 const ACTIVE_RESERVATION_STATUSES = ['confirmed', 'checked_in'];
 
@@ -267,7 +267,8 @@ async function createReservation(req, res) {
       startTime: window.start,
       endTime: window.end,
       status: 'confirmed',
-      vehicleRegistration
+      vehicleRegistration,
+      pendingNotifications: ['BOOKING']
     });
     return { reservation };
   });
@@ -275,7 +276,7 @@ async function createReservation(req, res) {
   if (result.status) return res.status(result.status).json({ message: result.message });
 
   emitSlotUpdate({ slotId: String(result.reservation.slot), lotId: String(result.reservation.lot), status: 'reserved', updatedAt: new Date().toISOString() });
-  await notifyReservation('BOOKING', result.reservation);
+  scheduleBookingNotification();
   return res.status(201).json({
     message: 'Reservation confirmed.',
     reservationId: result.reservation._id.toString(),
