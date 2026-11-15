@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const SlotLock = require('../src/models/SlotLock');
 const { withSlotLock } = require('../src/utils/slotLock');
+const Probe = mongoose.models.LockFencingProbe || mongoose.model('LockFencingProbe', new mongoose.Schema({ value: { type: String, required: true } }));
 
 jest.setTimeout(30000);
 let mongo;
@@ -15,7 +16,10 @@ beforeAll(async () => {
   await SlotLock.init();
 });
 afterAll(async () => {
-  if (mongoose.connection.readyState === 1) await SlotLock.deleteMany({ _id: { $in: ids } });
+  if (mongoose.connection.readyState === 1) {
+    await SlotLock.deleteMany({ _id: { $in: ids } });
+    await Probe.deleteMany({});
+  }
   await mongoose.disconnect();
   if (mongo) await mongo.stop();
 });
@@ -42,4 +46,45 @@ test('simultaneous contenders for the same slot enter serially', async () => {
   })));
   expect(maxActive).toBe(1);
   expect(await SlotLock.findById(slot)).toBeNull();
+});
+
+
+test('aborts stale-owner writes when another worker takes the expired lease before the fence check', async () => {
+  const slot = id();
+  let markEntered;
+  const entered = new Promise(resolve => { markEntered = resolve; });
+  let resumeStale;
+  const resume = new Promise(resolve => { resumeStale = resolve; });
+
+  const staleAttempt = withSlotLock(slot, async ({ session }) => {
+    await Probe.create([{ value: 'stale-owner-write' }], { session });
+    markEntered();
+    await resume;
+    return 'stale';
+  });
+
+  try {
+    await entered;
+    const lease = await SlotLock.findById(slot).lean();
+    expect(lease).toBeTruthy();
+
+    // Simulate a process pause longer than the lease. The old operation has
+    // an uncommitted business write, but has not yet executed the final fence.
+    await SlotLock.updateOne(
+      { _id: slot, owner: lease.owner, fence: lease.fence },
+      { $set: { leaseUntil: new Date(Date.now() - 1000) } }
+    );
+
+    const currentResult = await withSlotLock(slot, async ({ session }) => {
+      await Probe.create([{ value: 'new-owner-write' }], { session });
+      return 'current';
+    });
+    expect(currentResult).toBe('current');
+  } finally {
+    resumeStale();
+  }
+
+  await expect(staleAttempt).rejects.toMatchObject({ code: 'SLOT_LOCK_LOST' });
+  const writes = await Probe.find({}).sort({ value: 1 }).lean();
+  expect(writes.map(item => item.value)).toEqual(['new-owner-write']);
 });
