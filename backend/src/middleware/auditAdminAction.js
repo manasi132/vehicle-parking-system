@@ -32,15 +32,17 @@ function auditAdminAction(action, targetType) {
           if (session.inTransaction()) await session.abortTransaction().catch(() => {});
           throw error;
         } finally {
+          // Release lock leases and other transaction-scoped resources immediately
+          // after commit/abort, before running slower notification side effects.
+          for (const callback of context.afterFinalize) {
+            try { await callback(); }
+            catch (error) { console.error('Transaction cleanup failed:', error && error.message ? error.message : 'unknown error'); }
+          }
           if (committed) {
             for (const callback of context.afterCommit) {
               try { await callback(); }
               catch (error) { console.error('Post-commit action failed:', error && error.message ? error.message : 'unknown error'); }
             }
-          }
-          for (const callback of context.afterFinalize) {
-            try { await callback(); }
-            catch (error) { console.error('Transaction cleanup failed:', error && error.message ? error.message : 'unknown error'); }
           }
           context.finished = true;
           await session.endSession().catch(() => {});
