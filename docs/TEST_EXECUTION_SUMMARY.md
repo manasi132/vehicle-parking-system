@@ -5,7 +5,7 @@ Evidence commit: b5584dbc365be83bc11db9cc870d55c16ef8242f (15-Nov-2026).
 | Workflow | Run ID | Recorded outcome |
 |---|---:|---|
 | VPS backend CI | 43712409564 | 11 suites / 58 tests passed; line coverage 73.98%, branch coverage 59.91%, statement coverage 67.60%, function coverage 63.79%; artifact vps-backend-coverage uploaded. |
-| Frontend CI | 43704031902 | 3 test files / 14 tests passed; Vite production build passed. |
+| Frontend CI | 43712409513 | 3 test files / 14 tests passed; Vite production build passed. |
 | General CI | 43712409617 | Root Node line coverage 97.96%, branch coverage 88.82%, function coverage 95.00%; Nginx syntax passed using ephemeral certificate; artifact root-node-test-coverage uploaded. |
 
 These results do not prove signed UAT, live Stripe acceptance, deployed TLS, accessibility, monthly availability or production-like performance.
