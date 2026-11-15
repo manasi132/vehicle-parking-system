@@ -1,12 +1,12 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 jest.setTimeout(120000);
 test('prepayment, settlement, refunds and recovery use the real API and database', async () => {
   let mongo;
   let uri = process.env.MONGODB_TEST_URI;
-  if (!uri) { mongo = await MongoMemoryServer.create({ instance: { dbName: 'vps_test' } }); uri = mongo.getUri('vps_test'); }
+  if (!uri) { mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 }, instance: { dbName: 'vps_test' } }); uri = mongo.getUri('vps_test'); }
   const connection = await mongoose.createConnection(uri).asPromise();
   if (connection.name !== 'vps_test') { await connection.close(); if (mongo) await mongo.stop(); throw new Error('Dedicated vps_test database required'); }
   await connection.close();
