@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/manasi-sprint1-auth-lot-management
+      - feat/manasi-sprint2-acceptance-hardening
     paths:
       - 'backend/**'
       - 'src/payment/**'
@@ -13,6 +14,7 @@ on:
     branches:
       - feat/manavi-sprint1-booking-tracking
       - feat/manavi-sprint2-booking-tracking
+      - fix/audit-atomicity-booking-lock-fencing
     paths:
       - 'backend/**'
       - 'src/payment/**'
@@ -32,10 +34,11 @@ jobs:
         ports:
           - 27017:27017
         options: >-
-          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
+          --replSet rs0
+          --health-cmd "mongosh --quiet --eval 'try { if (db.hello().isWritablePrimary) quit(0); quit(1); } catch (e) { rs.initiate({_id: \"rs0\", members: [{_id: 0, host: \"localhost:27017\"}]}); quit(1); }'"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -52,7 +55,7 @@ jobs:
       - name: Run backend tests with line and branch coverage
         working-directory: backend
         env:
-          MONGODB_TEST_URI: mongodb://127.0.0.1:27017/vps_test
+          MONGODB_TEST_URI: mongodb://127.0.0.1:27017/vps_test?replicaSet=rs0
         run: npm test -- --coverage --coverageReporters=text --coverageReporters=html --coverageReporters=lcov --coverageReporters=json-summary --collectCoverageFrom='src/**/*.js'
       - name: Upload backend coverage
         if: always()
