@@ -36,8 +36,15 @@ test('payment modules contain no application logging or non-HTTPS third-party en
 test('CI automatically installs/tests PRs to main and does not suppress failures', async () => {
   const workflow = await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.match(workflow, /pull_request:\s+branches: \[main\]/);
-  assert.match(workflow, /- run: npm ci\s+- run: npm test/);
-  assert.doesNotMatch(workflow, /continue-on-error|\|\| true|paths-ignore|paths:|if:/);
+  assert.match(workflow, /- run: npm ci/);
+  const testStepStart = workflow.indexOf('      - name: Run root Node tests with coverage');
+  const testStepEnd = workflow.indexOf('      - name: Upload root coverage', testStepStart);
+  assert.ok(testStepStart >= 0 && testStepEnd > testStepStart, 'the root test step must be present before artifact upload');
+  const testStep = workflow.slice(testStepStart, testStepEnd);
+  assert.match(testStep, /set -o pipefail/);
+  assert.match(testStep, /node --experimental-test-coverage --test test\/\*\.test\.js/);
+  assert.doesNotMatch(testStep, /continue-on-error|\|\| true|if:/);
+  assert.doesNotMatch(workflow, /continue-on-error|\|\| true|paths-ignore|paths:/);
   assert.match(workflow, /node-version: '24'/);
   assert.match(workflow, /sudo nginx -t/);
 });
