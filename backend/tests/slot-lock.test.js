@@ -1,6 +1,6 @@
 const crypto = require('node:crypto');
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const SlotLock = require('../src/models/SlotLock');
 const { withSlotLock } = require('../src/utils/slotLock');
 
@@ -9,7 +9,7 @@ let mongo;
 const ids = [];
 beforeAll(async () => {
   let uri = process.env.MONGODB_TEST_URI;
-  if (!uri) { mongo = await MongoMemoryServer.create({ instance: { dbName: 'vps_test' } }); uri = mongo.getUri('vps_test'); }
+  if (!uri) { mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 }, instance: { dbName: 'vps_test' } }); uri = mongo.getUri('vps_test'); }
   await mongoose.connect(uri);
   if (mongoose.connection.name !== 'vps_test') { await mongoose.disconnect(); throw new Error('Dedicated vps_test database required'); }
   await SlotLock.init();
@@ -23,7 +23,7 @@ function id() { const value = 'lock-test-' + crypto.randomUUID(); ids.push(value
 
 test('an expired lease is reclaimed and released by its new owner', async () => {
   const slot = id();
-  await SlotLock.create({ _id: slot, owner: 'expired-owner', leaseUntil: new Date(Date.now() - 1000) });
+  await SlotLock.create({ _id: slot, owner: 'expired-owner', fence: 4, leaseUntil: new Date(Date.now() - 1000) });
   await withSlotLock(slot, async () => {
     const lock = await SlotLock.findById(slot).lean();
     expect(lock.owner).not.toBe('expired-owner');
