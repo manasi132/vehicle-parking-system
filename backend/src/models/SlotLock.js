@@ -6,7 +6,9 @@ const slotLockSchema = new mongoose.Schema(
     // coordinates concurrent lock acquisition across processes.
     _id: { type: String, required: true },
     owner: { type: String, required: true },
-    leaseUntil: { type: Date, required: true, index: true }
+    leaseUntil: { type: Date, required: true, index: true },
+    // Monotonic owner generation used to reject writes from stale lock holders.
+    fence: { type: Number, required: true }
   },
   { versionKey: false }
 );
