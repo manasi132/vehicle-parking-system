@@ -1,12 +1,12 @@
 # Sprint 2 Test Execution Summary
 
-Evidence commit: 1778aef93b1f63dc7720bb8ce3e709a6f653a802 (15-Nov-2026).
+Evidence commit: 02fd555615b6e7ec81264dde1be98417e72e3fa9 (15-Nov-2026).
 
 | Workflow | Run ID | Recorded outcome |
 |---|---:|---|
-| VPS backend CI | 43713153581 | 11 suites / 58 tests passed; line coverage 73.98%, branch coverage 59.91%, statement coverage 67.60%, function coverage 63.79%; artifact vps-backend-coverage uploaded. |
-| Frontend CI | 43713153635 | 3 test files / 14 tests passed; Vite production build passed. |
-| General CI | 43713153575 | Root Node line coverage 97.96%, branch coverage 88.82%, function coverage 95.00%; Nginx syntax passed using ephemeral certificate; artifact root-node-test-coverage uploaded. |
+| VPS backend CI | 43713544571 | 11 suites / 58 tests passed; line coverage 73.98%, branch coverage 59.91%, statement coverage 67.60%, function coverage 63.79%; artifact vps-backend-coverage uploaded (ID 14161786905). |
+| Frontend CI | 43713544567 | 3 test files / 14 tests passed; Vite production build passed. |
+| General CI | 43713544612 | Root Node line coverage 97.96%, branch coverage 88.82%, function coverage 95.00%; Nginx syntax passed using ephemeral certificate; artifact root-node-test-coverage uploaded (ID 14161786738). |
 
 These results do not prove signed UAT, live Stripe acceptance, deployed TLS, accessibility, monthly availability or production-like performance.
 
