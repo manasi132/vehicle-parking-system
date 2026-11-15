@@ -23,9 +23,9 @@ function createPaymentStore({ currency = 'inr' } = {}) {
   async function assertPaymentLock(id) {
     if (!await Payment.exists(filter(id))) throw unavailable();
   }
-  async function writeOnce(id, field, value, timestampField) {
+  async function writeOnce(id, field, value, timestampField, additionalUpdate = {}) {
     const stored = timestampField ? { ...value, [timestampField]: new Date().toISOString() } : value;
-    const result = await Payment.updateOne({ ...filter(id), [field]: null }, { $set: { [field]: stored } });
+    const result = await Payment.updateOne({ ...filter(id), [field]: null }, { $set: { [field]: stored }, ...additionalUpdate });
     if (result.modifiedCount === 1) return;
     const current = await Payment.findOne(filter(id)).lean();
     const existing = current?.[field];
@@ -92,7 +92,10 @@ function createPaymentStore({ currency = 'inr' } = {}) {
     },
     assertPaymentLock,
     async recordPaymentIntent(id, intent) { await writeOnce(id, 'intent', intent); },
-    async recordPayment(id, payment) { await writeOnce(id, 'payment', payment, 'paidAt'); },
+    async recordPayment(id, payment) {
+      // The payment and its recovery marker are written atomically in one Payment document.
+      await writeOnce(id, 'payment', payment, 'paidAt', { $addToSet: { pendingNotifications: 'PAYMENT' } });
+    },
     async getPaymentRecord(id) { return Payment.findOne(filter(id)).lean(); },
     async recordRefund(id, refund) { await writeOnce(id, 'refund', refund, 'refundedAt'); }
   };
