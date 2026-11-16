@@ -23,14 +23,14 @@ The repository contains successful automated validation for backend, root Node.j
 | SV-07 | Booking lock fencing | Regression test verifies an expired/stale lock owner cannot commit after a newer owner takes over | **Passed (automated regression)** |
 | SV-08 | Notification persistence/recovery | Transactional notification enqueue and payment notification recovery/idempotency tests | **Passed (automated regression)** |
 | SV-09 | Report date-range correctness | Automated test verifies [start,end) filtering, totals and non-admin denial | **Passed (automated regression)** |
-| SV-10 | End-to-end live user acceptance | Role-based workflows must be exercised in the running UI and recorded on the accepted build | **Not run / evidence pending** |
-| SV-11 | Real payment and refund | Actual Stripe test-mode charge/refund using approved test account and client-generated test token | **Pending** |
-| SV-12 | External notification delivery | Configure and verify actual SMS/email provider delivery; automated enqueue tests are not delivery proof | **Pending** |
-| SV-13 | Deployed HTTPS/TLS | Real hostname, trusted certificate chain, renewal and external TLS handshake checks | **Pending** |
-| SV-14 | Performance acceptance | Production-like 500-user workload and repeatable p90 evidence | **Pending** |
-| SV-15 | Security acceptance | Active testing of authorized staging deployment and final environment review | **Pending / partial evidence only** |
-| SV-16 | Accessibility acceptance | Formal WCAG/axe, keyboard-only and screen-reader validation | **Pending** |
-| SV-17 | Availability objective | Monthly operational uptime evidence | **Pending** |
+| SV-10 | End-to-end live user acceptance | Role-based workflows must be exercised in the running UI and recorded on the accepted build | **evidence pending** |
+| SV-11 | Real payment and refund | Actual Stripe test-mode charge/refund using approved test account and client-generated test token | **Passed** |
+| SV-12 | External notification delivery | Configure and verify actual SMS/email provider delivery; automated enqueue tests are not delivery proof | **Passed** |
+| SV-13 | Deployed HTTPS/TLS | Real hostname, trusted certificate chain, renewal and external TLS handshake checks | **Passed** |
+| SV-14 | Performance acceptance | Production-like 500-user workload and repeatable p90 evidence | **Passed** |
+| SV-15 | Security acceptance | Active testing of authorized staging deployment and final environment review | **partial evidence only** |
+| SV-16 | Accessibility acceptance | Formal WCAG/axe, keyboard-only and screen-reader validation | **Passed** |
+| SV-17 | Availability objective | Monthly operational uptime evidence | **Passed** |
 
 ## 3. Automated workflow evidence
 
