@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => {
   server: {
     proxy: {
       '/api': {
-        target: process.env.VPS_API_TARGET || 'http://localhost:4000',
+        target: process.env.VPS_API_TARGET || 'http://localhost:5000',
         changeOrigin: true,
       },
     },
