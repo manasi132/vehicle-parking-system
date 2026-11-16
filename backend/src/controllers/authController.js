@@ -17,6 +17,11 @@ function createToken(user) {
 function hashOtp(value) {
   return crypto.createHmac('sha256', process.env.JWT_SECRET).update(String(value)).digest('hex');
 }
+function otpHashMatches(storedHash, otp) {
+  if (typeof storedHash !== 'string' || !/^[a-f0-9]{64}$/i.test(storedHash)) return false;
+  const stored = Buffer.from(storedHash, 'hex'), candidate = Buffer.from(hashOtp(otp), 'hex');
+  return stored.length === candidate.length && crypto.timingSafeEqual(stored, candidate);
+}
 
 async function register(req, res) {
   const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
@@ -97,9 +102,10 @@ async function requestPasswordReset(req, res) {
     await user.save();
     try {
       await sendPasswordResetOtp({ user, otp });
-    } catch (error) {
+    } catch (_error) {
       // Preserve the same public response for known and unknown accounts.
-      console.error('Password reset delivery failed:', error.message);
+      await User.updateOne({ _id: user._id, passwordResetOtpHash: hashOtp(otp) }, { $set: { passwordResetOtpHash: null, passwordResetOtpExpiresAt: null } });
+      console.error('Password reset delivery failed.');
     }
   }
   return res.status(200).json({ message: 'If the account exists, a password reset code has been sent. The code is valid for 10 minutes.' });
@@ -118,7 +124,7 @@ async function confirmPasswordReset(req, res) {
   const user = await User.findOne(query).select('+passwordResetOtpHash +passwordResetOtpExpiresAt');
   if (!user || !user.passwordResetOtpHash || !user.passwordResetOtpExpiresAt ||
       user.passwordResetOtpExpiresAt <= new Date() ||
-      !crypto.timingSafeEqual(Buffer.from(user.passwordResetOtpHash), Buffer.from(hashOtp(otp)))) {
+      !otpHashMatches(user.passwordResetOtpHash, otp)) {
     return res.status(400).json({ message: 'The reset code is invalid or expired.' });
   }
   user.passwordHash = await bcrypt.hash(newPassword, 12);

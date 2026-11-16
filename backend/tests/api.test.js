@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const app = require('../src/app');
 const User = require('../src/models/User');
 const ParkingLot = require('../src/models/ParkingLot');
@@ -22,8 +22,8 @@ beforeAll(async () => {
       throw new Error('MONGODB_TEST_URI must point to a dedicated database named vps_test. Do not use your application database.');
     }
   } else {
-    mongo = await MongoMemoryServer.create();
-    await mongoose.connect(mongo.getUri());
+    mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 }, instance: { dbName: 'vps_test' } });
+    await mongoose.connect(mongo.getUri('vps_test'));
   }
   await Promise.all([User.init(), ParkingLot.init(), ParkingSlot.init()]);
 }, 60000);

@@ -15,6 +15,9 @@ test('nginx statically enforces redirect, modern TLS, certificate paths, HSTS an
   assert.match(config, /ssl_certificate \/etc\/letsencrypt\/live\/parking\.example\.com\/fullchain\.pem;/);
   assert.match(config, /ssl_certificate_key \/etc\/letsencrypt\/live\/parking\.example\.com\/privkey\.pem;/);
   assert.match(config, /add_header Strict-Transport-Security "max-age=31536000" always;/);
+  assert.match(config, /add_header Content-Security-Policy ".*frame-ancestors 'none'.*form-action 'self'.*https:\/\/js\.stripe\.com/);
+  assert.match(config, /add_header X-Frame-Options "DENY" always;/);
+  assert.match(config, /add_header X-Content-Type-Options "nosniff" always;/);
   assert.match(config, /ssl_session_tickets off;/);
   assert.match(config, /proxy_pass http:\/\/127\.0\.0\.1:3000;/);
   assert.match(config, /proxy_set_header X-Forwarded-Proto https;/);
@@ -33,8 +36,15 @@ test('payment modules contain no application logging or non-HTTPS third-party en
 test('CI automatically installs/tests PRs to main and does not suppress failures', async () => {
   const workflow = await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.match(workflow, /pull_request:\s+branches: \[main\]/);
-  assert.match(workflow, /- run: npm ci\s+- run: npm test/);
-  assert.doesNotMatch(workflow, /continue-on-error|\|\| true|paths-ignore|paths:|if:/);
+  assert.match(workflow, /- run: npm ci/);
+  const testStepStart = workflow.indexOf('      - name: Run root Node tests with coverage');
+  const testStepEnd = workflow.indexOf('      - name: Upload root coverage', testStepStart);
+  assert.ok(testStepStart >= 0 && testStepEnd > testStepStart, 'the root test step must be present before artifact upload');
+  const testStep = workflow.slice(testStepStart, testStepEnd);
+  assert.match(testStep, /set -o pipefail/);
+  assert.match(testStep, /node --experimental-test-coverage --test test\/\*\.test\.js/);
+  assert.doesNotMatch(testStep, /continue-on-error|\|\| true|if:/);
+  assert.doesNotMatch(workflow, /continue-on-error|\|\| true|paths-ignore|paths:/);
   assert.match(workflow, /node-version: '24'/);
   assert.match(workflow, /sudo nginx -t/);
 });

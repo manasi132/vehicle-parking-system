@@ -21,6 +21,7 @@ async function main() {
   const Slot = require('../src/models/ParkingSlot');
   const Reservation = require('../src/models/Reservation');
   const Payment = require('../src/models/Payment');
+  const Notification = require('../src/models/Notification');
   const mongo = await MongoMemoryServer.create({ instance: { dbName: 'vps_test' } });
   try {
     await mongoose.connect(mongo.getUri('vps_test'));
@@ -102,6 +103,12 @@ async function main() {
     assert.equal(pending.payment.amountMinor, succeededBeforeRetry.amount);
     assert.equal(pending.payment.currency, succeededBeforeRetry.currency);
     console.log(`PASS write-failure recovery: ${succeededBeforeRetry.id} ${succeededBeforeRetry.amount} ${succeededBeforeRetry.currency} ${succeededBeforeRetry.status}`);
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline && await Notification.countDocuments({ type: 'PAYMENT', state: 'delivered' }) < 3) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.equal(await Notification.countDocuments({ type: 'PAYMENT', state: 'delivered' }), 3, 'Payment notifications');
+    console.log('PASS payment notification deduplication: three delivered events for three payments');
     console.log('Stripe API test-mode records match MongoDB; inspect these PaymentIntent IDs in the Stripe test dashboard.');
   } finally { await mongoose.disconnect(); await mongo.stop(); }
 }

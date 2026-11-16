@@ -3,10 +3,12 @@ const asyncHandler = require('../utils/asyncHandler');
 const { authenticate, authorizeRoles } = require('../middleware/auth');
 const auditAdminAction = require('../middleware/auditAdminAction');
 const { setLotPricing, getOccupancy, createAttendant, listAttendants, listAuditLogs } = require('../controllers/adminController');
+const { report } = require('../controllers/reportController');
 
 const router = express.Router();
 router.use(authenticate, authorizeRoles('admin'));
 router.get('/occupancy', asyncHandler(getOccupancy));
+router.get('/reports', asyncHandler(report));
 router.post('/lots/:lotId/pricing', auditAdminAction('lot.pricing.update', 'ParkingLot'), asyncHandler(setLotPricing));
 router.get('/attendants', asyncHandler(listAttendants));
 router.post('/attendants', auditAdminAction('attendant.create', 'User'), asyncHandler(createAttendant));

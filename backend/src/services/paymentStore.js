@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const Reservation = require('../models/Reservation');
 const Payment = require('../models/Payment');
 const { pricingFromLot } = require('../utils/pricing');
+const { settlementFor } = require('../utils/settlement');
 
 const context = new AsyncLocalStorage();
 const LEASE_MS = 120000;
@@ -22,11 +23,14 @@ function createPaymentStore({ currency = 'inr' } = {}) {
   async function assertPaymentLock(id) {
     if (!await Payment.exists(filter(id))) throw unavailable();
   }
-  async function writeOnce(id, field, value) {
-    const result = await Payment.updateOne({ ...filter(id), [field]: null }, { $set: { [field]: value } });
+  async function writeOnce(id, field, value, timestampField, additionalUpdate = {}) {
+    const stored = timestampField ? { ...value, [timestampField]: new Date().toISOString() } : value;
+    const result = await Payment.updateOne({ ...filter(id), [field]: null }, { $set: { [field]: stored }, ...additionalUpdate });
     if (result.modifiedCount === 1) return;
     const current = await Payment.findOne(filter(id)).lean();
-    if (!current || JSON.stringify(current[field]) !== JSON.stringify(value)) throw unavailable();
+    const existing = current?.[field];
+    if (!existing || Object.keys(value).some(key => JSON.stringify(existing[key]) !== JSON.stringify(value[key])) ||
+        Object.keys(existing).some(key => key !== timestampField && !Object.prototype.hasOwnProperty.call(value, key))) throw unavailable();
   }
   return {
     async withPaymentLock(id, callback) {
@@ -62,21 +66,25 @@ function createPaymentStore({ currency = 'inr' } = {}) {
         await Payment.updateOne({ _id: id, lockOwner: token }, { $set: { lockOwner: null, lockUntil: null } });
       }
     },
-    async findById(id, userId) {
+    async findById(id, userId, { quote = false } = {}) {
       if (!mongoose.isValidObjectId(id)) return null;
       const reservation = await Reservation.findById(id).populate('lot').lean();
       if (!reservation || String(reservation.user) !== userId) return null;
       await assertPaymentLock(id);
       let record = await Payment.findOne(filter(id)).lean();
-      if (record.payment) return { userId, payment: record.payment };
+      if (reservation.status === 'cancelled') return { userId, paymentError: 'Cancelled reservations cannot be charged.' };
+      if (record.payment) {
+        return { userId, payment: record.payment, settlement: settlementFor(reservation, record) };
+      }
       if (!record.snapshot) {
-        if (reservation.status !== 'completed' || !reservation.entryAt || !reservation.exitAt || reservation.exitAt <= reservation.entryAt) {
-          return { userId, paymentError: 'Only completed stays with a recorded entry and exit can be paid.' };
-        }
+        const prepaid = reservation.status === 'confirmed' && reservation.startTime > new Date();
+        const completed = reservation.status === 'completed' && reservation.entryAt && reservation.exitAt && reservation.exitAt > reservation.entryAt;
+        if (!prepaid && !completed) return { userId, paymentError: 'Only a future reservation or completed stay can be paid.' };
         let pricing;
         try { pricing = pricingFromLot(reservation.lot); }
         catch { return { userId, paymentError: 'The parking lot pricing is not configured correctly.' }; }
-        const snapshot = { startTime: reservation.entryAt.toISOString(), endTime: reservation.exitAt.toISOString(), ...pricing, currency };
+        const snapshot = { startTime: (prepaid ? reservation.startTime : reservation.entryAt).toISOString(), endTime: (prepaid ? reservation.endTime : reservation.exitAt).toISOString(), ...pricing, currency, prepaid: Boolean(prepaid) };
+        if (quote) return { userId, ...snapshot, paymentIntent: null, payment: null };
         await writeOnce(id, 'snapshot', snapshot);
         record = await Payment.findOne(filter(id)).lean();
       }
@@ -84,7 +92,12 @@ function createPaymentStore({ currency = 'inr' } = {}) {
     },
     assertPaymentLock,
     async recordPaymentIntent(id, intent) { await writeOnce(id, 'intent', intent); },
-    async recordPayment(id, payment) { await writeOnce(id, 'payment', payment); }
+    async recordPayment(id, payment) {
+      // The payment and its recovery marker are written atomically in one Payment document.
+      await writeOnce(id, 'payment', payment, 'paidAt', { $addToSet: { pendingNotifications: 'PAYMENT' } });
+    },
+    async getPaymentRecord(id) { return Payment.findOne(filter(id)).lean(); },
+    async recordRefund(id, refund) { await writeOnce(id, 'refund', refund, 'refundedAt'); }
   };
 }
 module.exports = { createPaymentStore };

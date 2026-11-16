@@ -7,10 +7,10 @@ const unavailable = () => Object.assign(new Error('Payment provider unavailable'
 export function createStripeSandbox(secretKey, fetchImpl = fetch, sleep = delay) {
   if (typeof secretKey !== 'string' || !/^sk_test_[a-zA-Z0-9]+$/.test(secretKey)) throw new Error('A Stripe test secret key is required');
 
-  async function request(path, params, key) {
+  async function request(path, params, key, resource = 'payment_intents') {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const response = await fetchImpl(`https://api.stripe.com/v1/payment_intents${path}`, {
+        const response = await fetchImpl(`https://api.stripe.com/v1/${resource}${path}`, {
           method: params ? 'POST' : 'GET',
           redirect: 'error',
           signal: AbortSignal.timeout(10000),
@@ -55,6 +55,35 @@ export function createStripeSandbox(secretKey, fetchImpl = fetch, sleep = delay)
       }
       if (data.status === 'processing') throw unavailable();
       return data.status === 'succeeded' ? { success: true, transactionId: data.id } : { success: false };
+    },
+    async inspectIntent({ id, amountMinor, currency }) {
+      if (!/^pi_[a-zA-Z0-9]+$/.test(id)) throw unavailable();
+      const intent = validate(await request(`/${id}`), amountMinor, currency);
+      if (['processing', 'requires_capture'].includes(intent.status)) throw unavailable();
+      return { paid: intent.status === 'succeeded', transactionId: intent.id, status: intent.status };
+    },
+    async cancelIntent({ id, amountMinor, currency, reservationId }) {
+      if (!/^pi_[a-zA-Z0-9]+$/.test(id)) throw unavailable();
+      const fingerprint = createHash('sha256').update(reservationId).digest('hex');
+      const current = validate(await request(`/${id}`), amountMinor, currency);
+      if (current.status === 'canceled') return;
+      const cancelled = validate(await request(`/${id}/cancel`, {}, `parking-cancel-intent:${fingerprint}`), amountMinor, currency);
+      if (cancelled.status !== 'canceled') throw unavailable();
+    },
+    async refund({ transactionId, amountMinor, currency, reservationId }) {
+      if (!/^pi_[a-zA-Z0-9]+$/.test(transactionId) || !Number.isSafeInteger(amountMinor) || amountMinor < 1 || !/^[a-z]{3}$/.test(currency)) throw unavailable();
+      const intent = validate(await request(`/${transactionId}`), amountMinor, currency);
+      if (intent.status !== 'succeeded') throw unavailable();
+      const fingerprint = createHash('sha256').update(reservationId).digest('hex');
+      const prior = await request(`?payment_intent=${encodeURIComponent(transactionId)}&limit=100`, null, null, 'refunds');
+      if (!prior || !Array.isArray(prior.data) || prior.has_more) throw unavailable();
+      let refund = prior.data.find(item => item.metadata?.parking_reservation === fingerprint);
+      if (!refund) {
+        refund = await request('', { payment_intent: transactionId, amount: String(amountMinor), 'metadata[parking_reservation]': fingerprint }, `parking-refund:${fingerprint}`, 'refunds');
+      }
+      if (!refund || !/^re_[a-zA-Z0-9]+$/.test(refund.id) || refund.status !== 'succeeded' ||
+          refund.payment_intent !== transactionId || refund.amount !== amountMinor || refund.currency !== currency) throw unavailable();
+      return { refundId: refund.id, amountMinor, currency };
     }
   };
 }

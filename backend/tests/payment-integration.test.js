@@ -1,4 +1,4 @@
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
@@ -8,7 +8,7 @@ test('payment route integrates JWT, persisted MongoDB state and sandbox gateway 
   let mongo;
   let uri = process.env.MONGODB_TEST_URI;
   if (!uri) {
-    mongo = await MongoMemoryServer.create({ instance: { dbName: 'vps_test' } });
+    mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 }, instance: { dbName: 'vps_test' } });
     uri = mongo.getUri('vps_test');
   }
   // Guard against accidentally deleting data from any non-test database.

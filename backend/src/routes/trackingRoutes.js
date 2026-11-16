@@ -5,6 +5,7 @@ const auditAdminAction = require('../middleware/auditAdminAction');
 const { recordEntry, recordExit, triggerSimulatedScan, listAlerts, streamSlotUpdates } = require('../controllers/trackingController');
 
 const router = express.Router();
+router.get('/board/events', streamSlotUpdates);
 
 router.post('/entry', authenticate, authorizeRoles('attendant', 'admin'), auditAdminAction('tracking.entry', 'VehicleEntry'), asyncHandler(recordEntry));
 router.post('/exit', authenticate, authorizeRoles('attendant', 'admin'), auditAdminAction('tracking.exit', 'VehicleEntry'), asyncHandler(recordExit));

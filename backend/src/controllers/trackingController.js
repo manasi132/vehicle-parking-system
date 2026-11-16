@@ -6,6 +6,7 @@ const TrackingAlert = require('../models/TrackingAlert');
 const { withSlotLock } = require('../utils/slotLock');
 const { normalizeVehicleRegistration } = require('../utils/vehicleRegistration');
 const { emitSlotUpdate, subscribeSlotUpdates } = require('../utils/realtime');
+const { notifyReservation, dispatchNotification } = require('../services/notifications');
 
 async function createAlert(req, reservationId, vehicleRegistration, reason, gate = 'main', type = 'UNAUTHORIZED_VEHICLE') {
   return TrackingAlert.create({
@@ -13,6 +14,15 @@ async function createAlert(req, reservationId, vehicleRegistration, reason, gate
     ...(vehicleRegistration ? { vehicleRegistration } : {}),
     reason, gate, type, attemptedBy: req.user.id
   });
+}
+function afterCommit(req, callback) {
+  if (req.auditContext) req.auditContext.afterCommit.push(callback);
+  else return callback();
+}
+function trackingConflict(message) {
+  const error = new Error(message);
+  error.code = 'TRACKING_STATE_CONFLICT';
+  return error;
 }
 function activeAt(reservation, now) {
   return reservation && reservation.status === 'confirmed' && reservation.startTime <= now && reservation.endTime > now;
@@ -36,36 +46,52 @@ async function recordEntry(req, res) {
     const alert = await createAlert(req, reservationId, vehicleRegistration, 'Entry attempted for an unknown reservation.', gate);
     return res.status(409).json({ message: 'No active reservation matches this vehicle entry.', alertId: alert._id.toString() });
   }
-  const result = await withSlotLock(String(firstLookup.slot), async () => {
-    const reservation = await Reservation.findById(reservationId);
+  let result;
+  try {
+    result = await withSlotLock(String(firstLookup.slot), async ({ session }) => {
+    const reservation = await Reservation.findById(reservationId).session(session);
     const now = new Date();
     if (!activeAt(reservation, now)) return { error: 'Reservation is not active for entry.' };
     if (!reservation.vehicleRegistration || reservation.vehicleRegistration !== vehicleRegistration) return { error: 'Vehicle registration does not match the reservation or was not recorded at booking.' };
-    const slot = await ParkingSlot.findById(reservation.slot);
+    const slot = await ParkingSlot.findById(reservation.slot).session(session);
     if (!slot || slot.status !== 'available') return { error: 'The reserved parking slot is not available for entry.' };
-    const occupiedSlot = await ParkingSlot.findOneAndUpdate({ _id: slot._id, status: 'available' }, { $set: { status: 'occupied' } }, { new: true });
+    const occupiedSlot = await ParkingSlot.findOneAndUpdate(
+      { _id: slot._id, status: 'available' },
+      { $set: { status: 'occupied' } },
+      { new: true, session }
+    );
     if (!occupiedSlot) return { error: 'The parking slot status changed; retry after refreshing.' };
-    const updatedReservation = await Reservation.findOneAndUpdate({ _id: reservation._id, status: 'confirmed' }, { $set: { status: 'checked_in', entryAt: now } }, { new: true });
+    const updatedReservation = await Reservation.findOneAndUpdate(
+      { _id: reservation._id, status: 'confirmed' },
+      { $set: { status: 'checked_in', entryAt: now } },
+      { new: true, session }
+    );
     if (!updatedReservation) {
-      await ParkingSlot.updateOne({ _id: slot._id, status: 'occupied' }, { $set: { status: 'available' } });
-      return { error: 'Reservation was already used or changed.' };
+      throw trackingConflict('Reservation was already used or changed.');
     }
-    try {
-      const entry = await VehicleEntry.create({ reservation: reservation._id, lot: reservation.lot, slot: reservation.slot, vehicleRegistration, enteredBy: req.user.id, entryTriggerSource: triggerSource, status: 'entered', entryAt: now });
+    const [entry] = await VehicleEntry.create([{
+        reservation: reservation._id, lot: reservation.lot, slot: reservation.slot,
+        vehicleRegistration, enteredBy: req.user.id, entryTriggerSource: triggerSource,
+        status: 'entered', entryAt: now
+      }], { session });
+      await notifyReservation('ENTRY', updatedReservation, { session });
       return { entry, reservation: updatedReservation };
-    } catch (error) {
-      await Promise.all([
-        ParkingSlot.updateOne({ _id: slot._id, status: 'occupied' }, { $set: { status: 'available' } }),
-        Reservation.updateOne({ _id: reservation._id, status: 'checked_in' }, { $set: { status: 'confirmed', entryAt: null } })
-      ]);
-      throw error;
-    }
-  });
+    }, { transactionContext: req.auditContext });
+  } catch (error) {
+    if (error.code !== 'TRACKING_STATE_CONFLICT') throw error;
+    const alert = await createAlert(req, reservationId, vehicleRegistration, error.message, gate);
+    return res.status(409).json({ message: error.message, alertId: alert._id.toString() });
+  }
   if (result.error) {
     const alert = await createAlert(req, reservationId, vehicleRegistration, result.error, gate);
     return res.status(409).json({ message: result.error, alertId: alert._id.toString() });
   }
-  emitSlotUpdate(publicSlotUpdate(result.reservation, 'occupied', result.entry.entryAt));
+  afterCommit(req, async () => {
+    emitSlotUpdate(publicSlotUpdate(result.reservation, 'occupied', result.entry.entryAt));
+    if (process.env.NODE_ENV === 'test') {
+      await dispatchNotification('ENTRY:' + String(result.reservation._id));
+    }
+  });
   return res.status(201).json({ message: 'Vehicle entry recorded; slot marked occupied.', entryId: result.entry._id.toString(), reservationId: result.reservation._id.toString(), slotId: result.reservation.slot.toString(), triggerSource, entry: result.entry });
 }
 async function recordExit(req, res) {
@@ -84,35 +110,55 @@ async function recordExit(req, res) {
     const alert = await createAlert(req, reservationId, vehicleRegistration, 'Exit attempted without a matching active entry.', gate, 'EXIT_REJECTED');
     return res.status(404).json({ message: 'No active vehicle entry matches this reservation.', alertId: alert._id.toString() });
   }
-  const result = await withSlotLock(String(initialEntry.slot), async () => {
-    const entry = await VehicleEntry.findOne({ reservation: reservationId, status: 'entered' });
-    const reservation = await Reservation.findById(reservationId);
+  let result;
+  try {
+    result = await withSlotLock(String(initialEntry.slot), async ({ session }) => {
+    const entry = await VehicleEntry.findOne({ reservation: reservationId, status: 'entered' }).session(session);
+    const reservation = await Reservation.findById(reservationId).session(session);
     if (!entry || !reservation || reservation.status !== 'checked_in') return { status: 404, error: 'No active vehicle entry matches this reservation.' };
     if (entry.vehicleRegistration !== vehicleRegistration) return { error: 'Vehicle registration does not match the active entry.' };
     const now = new Date();
-    const updatedEntry = await VehicleEntry.findOneAndUpdate({ _id: entry._id, status: 'entered' }, { $set: { status: 'exited', exitAt: now, exitedBy: req.user.id, exitTriggerSource: triggerSource } }, { new: true });
+    const updatedEntry = await VehicleEntry.findOneAndUpdate(
+      { _id: entry._id, status: 'entered' },
+      { $set: { status: 'exited', exitAt: now, exitedBy: req.user.id, exitTriggerSource: triggerSource } },
+      { new: true, session }
+    );
     if (!updatedEntry) return { error: 'Vehicle entry was already closed.' };
-    const updatedReservation = await Reservation.findOneAndUpdate({ _id: reservation._id, status: 'checked_in' }, { $set: { status: 'completed', exitAt: now } }, { new: true });
+    const updatedReservation = await Reservation.findOneAndUpdate(
+      { _id: reservation._id, status: 'checked_in' },
+      { $set: { status: 'completed', exitAt: now } },
+      { new: true, session }
+    );
     if (!updatedReservation) {
-      await VehicleEntry.updateOne({ _id: entry._id, status: 'exited' }, { $set: { status: 'entered', exitAt: null, exitedBy: null, exitTriggerSource: null } });
-      return { error: 'Reservation state changed; retry after refreshing.' };
+      throw trackingConflict('Reservation state changed; retry after refreshing.');
     }
-    const slot = await ParkingSlot.findOneAndUpdate({ _id: reservation.slot, status: 'occupied' }, { $set: { status: 'available' } }, { new: true });
+    const slot = await ParkingSlot.findOneAndUpdate(
+      { _id: reservation.slot, status: 'occupied' },
+      { $set: { status: 'available' } },
+      { new: true, session }
+    );
     if (!slot) {
-      await Promise.all([
-        VehicleEntry.updateOne({ _id: entry._id, status: 'exited' }, { $set: { status: 'entered', exitAt: null, exitedBy: null, exitTriggerSource: null } }),
-        Reservation.updateOne({ _id: reservation._id, status: 'completed' }, { $set: { status: 'checked_in', exitAt: null } })
-      ]);
-      return { error: 'The occupied slot state changed; retry after refreshing.' };
+      throw trackingConflict('The occupied slot state changed; retry after refreshing.');
     }
+    await notifyReservation('EXIT', updatedReservation, { session });
     return { entry: updatedEntry, reservation: updatedReservation };
-  });
+    }, { transactionContext: req.auditContext });
+  } catch (error) {
+    if (error.code !== 'TRACKING_STATE_CONFLICT') throw error;
+    const alert = await createAlert(req, reservationId, vehicleRegistration, error.message, gate, 'EXIT_REJECTED');
+    return res.status(409).json({ message: error.message, alertId: alert._id.toString() });
+  }
   if (result.error) {
     const alert = await createAlert(req, reservationId, vehicleRegistration, result.error, gate, 'EXIT_REJECTED');
     return res.status(result.status || 409).json({ message: result.error, alertId: alert._id.toString() });
   }
   const durationMinutes = Math.max(0, Math.ceil((result.entry.exitAt - result.entry.entryAt) / 60000));
-  emitSlotUpdate(publicSlotUpdate(result.reservation, 'available', result.entry.exitAt));
+  afterCommit(req, async () => {
+    emitSlotUpdate(publicSlotUpdate(result.reservation, 'available', result.entry.exitAt));
+    if (process.env.NODE_ENV === 'test') {
+      await dispatchNotification('EXIT:' + String(result.reservation._id));
+    }
+  });
   return res.status(200).json({ message: 'Vehicle exit recorded; slot marked available.', entryId: result.entry._id.toString(), reservationId: result.reservation._id.toString(), durationMinutes, entryAt: result.entry.entryAt, exitAt: result.entry.exitAt, triggerSource, entry: result.entry });
 }
 async function triggerSimulatedScan(req, res) {
@@ -141,7 +187,9 @@ function streamSlotUpdates(req, res) {
   res.write(': connected\n\n');
   const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 25000);
   const unsubscribe = subscribeSlotUpdates((payload) => {
-    res.write('event: slot:update\ndata: ' + JSON.stringify(payload) + '\n\n');
+    // Board events must not disclose reservation identifiers or vehicle data.
+    const { lotId, slotId, status, updatedAt } = payload;
+    res.write('event: slot:update\ndata: ' + JSON.stringify({ lotId, slotId, status, updatedAt }) + '\n\n');
   });
   req.on('close', () => {
     clearInterval(heartbeat);

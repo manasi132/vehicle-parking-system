@@ -26,7 +26,7 @@ All admin endpoints require `Authorization: Bearer <JWT>` with an admin role.
   - Body: `{ "identifier": "email@example.com", "otp": "123456", "newPassword": "New!StrongPass123" }`.
   - Invalid, expired or previously consumed codes return HTTP 400.
 
-**Delivery adapter limitation:** In development/test mode, the OTP is printed to the backend console so the flow can be demonstrated without external services; the API response never returns the code. In production, the host application must configure `global.passwordResetOtpDelivery({ user, otp })` to deliver through an approved email/SMS provider. The provider credentials and actual delivery integration are not included in this repository change. A delivery failure keeps the public forgot-password response generic and is logged as a server-side delivery failure.
+**Delivery configuration:** In development/test mode, the OTP is printed to the backend console for local demonstration; the API response never returns it. In production, configure `PASSWORD_RESET_DELIVERY_URL` and `PASSWORD_RESET_DELIVERY_TOKEN` in `backend/.env` (or the deployment secret store). The URL must use HTTPS. The API sends an authenticated POST with JSON fields `event=password_reset_otp`, `userId`, `channel` (`email` or `sms`), `destination`, `otp`, and `expiresInMinutes=10`; the relay must dispatch the code through the configured email/SMS provider and return a 2xx response. An application can alternatively inject `global.passwordResetOtpDelivery({ user, otp })` before handling requests. Calls time out after eight seconds and redirects are rejected. On delivery failure, the OTP is cleared, the public response remains generic to prevent account enumeration, and the server logs only a sanitized provider-failure message. The actual relay URL, token, and provider account remain deployment-specific and must be supplied by the project owner.
 
 ### Account lockout
 
@@ -60,7 +60,7 @@ All admin endpoints require `Authorization: Bearer <JWT>` with an admin role.
 ### Audit log
 
 - `GET /api/admin/audit-logs?limit=50`
-  - Limit is clamped to 1–100. Actor profile is populated; request bodies, passwords, OTPs and tokens are not logged.
+  - Limit defaults to 50 and must be an integer from 1 to 100; malformed, zero, negative, fractional and oversized values return HTTP 400. Results are sorted newest-first by timestamp with a deterministic ID tie-breaker. Actor profile is populated; request bodies, passwords, OTPs and tokens are not logged.
 
 ## Verification
 
@@ -71,7 +71,7 @@ npm install
 npm test
 ```
 
-The Sprint 2 API tests are in `backend/tests/sprint2.test.js`. CI supplies a disposable MongoDB service and `MONGODB_TEST_URI=mongodb://127.0.0.1:27017/vps_test`; the test suite refuses to operate on a database other than `vps_test`.
+The Sprint 2 API tests are in `backend/tests/sprint2.test.js` and the additional acceptance suite is `backend/tests/manasi-sprint2-acceptance.test.js`. The acceptance suite covers production HTTPS OTP relay configuration, delivery failure cleanup, phone-based reset, fractional and overnight pricing, empty-lot occupancy, attendant phone/password handling, audit pagination/authorization, and audit records for lot/slot/pricing/attendant/admin gate operations. CI supplies a disposable MongoDB service and `MONGODB_TEST_URI=mongodb://127.0.0.1:27017/vps_test`; the test suites refuse to operate on a database other than `vps_test`.
 
 ## Operational notes
 
