@@ -1,5 +1,7 @@
 # Vehicle Parking System: Sprint 1 payment and infrastructure
 
+> **Project planning:** [Project management hub](docs/project-management/README.md) · [37-story product backlog](docs/project-management/PRODUCT_BACKLOG.md) · [Sprint plan](docs/project-management/SPRINT_PLAN.md) · [Epic breakdown](docs/project-management/EPICS.md) · [Project closeout dashboard](docs/project-management/PROJECT_CLOSEOUT.md)
+
 Use Node.js 24 LTS (CI); the modules require Node.js 20+. Run `npm ci` then `npm test` (`npm.cmd` on Windows if PowerShell blocks `npm.ps1`). Tests use Node's built-in runner and synthetic provider responses; they do **not** execute a Stripe transaction.
 
 ## Fee calculation (VPS-F-030)
